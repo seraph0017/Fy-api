@@ -778,6 +778,9 @@ func FailTaskInfo(reason string) *TaskInfo {
 // service_tier: 服务层级字段，可能导致额外计费（OpenAI、Claude、Responses API 支持）
 // inference_geo: Claude 数据驻留推理区域字段（仅 Claude 支持，默认过滤）
 // speed: Claude 推理速度模式字段（仅 Claude 支持，默认过滤）
+// context_management: Claude 上下文管理 beta 字段（仅 Claude 支持，默认过滤；
+//                     该字段需要客户端同时携带 "anthropic-beta: context-management-*" 请求头，
+//                     仅在 body 里塞此字段会被 Anthropic schema 校验直接拒绝）
 // store: 数据存储授权字段，涉及用户隐私（仅 OpenAI、Responses API 支持，默认允许透传，禁用后可能导致 Codex 无法使用）
 // safety_identifier: 安全标识符，用于向 OpenAI 报告违规用户（仅 OpenAI 支持，涉及用户隐私）
 // stream_options.include_obfuscation: 响应流混淆控制字段（仅 OpenAI Responses API 支持）
@@ -810,6 +813,17 @@ func RemoveDisabledFields(jsonData []byte, channelOtherSettings dto.ChannelOther
 	if !channelOtherSettings.AllowSpeed {
 		if _, exists := data["speed"]; exists {
 			delete(data, "speed")
+		}
+	}
+
+	// 默认移除 context_management，除非明确允许。
+	// Anthropic 的 context_management 字段属于 beta 功能，必须配合
+	// "anthropic-beta: context-management-2025-..." 请求头才能生效。
+	// 客户端如果只在 body 里塞这个字段而没带 header，Anthropic 会用
+	// schema 校验直接拒绝（"context_management: Extra inputs are not permitted"）。
+	if !channelOtherSettings.AllowContextManagement {
+		if _, exists := data["context_management"]; exists {
+			delete(data, "context_management")
 		}
 	}
 
