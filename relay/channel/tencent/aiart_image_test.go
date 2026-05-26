@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -21,6 +22,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+func TestMain(m *testing.M) {
+	gin.SetMode(gin.TestMode)
+	service.InitHttpClient()
+	os.Exit(m.Run())
+}
 
 func TestIsTencentAIArtImageGeneration(t *testing.T) {
 	t.Parallel()
@@ -144,7 +151,6 @@ func TestTencentAIArtSignUsesAIArtService(t *testing.T) {
 func TestTencentAIArtImageResponseConversion(t *testing.T) {
 	t.Parallel()
 
-	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 
@@ -179,7 +185,6 @@ func TestTencentAIArtImageResponseConversion(t *testing.T) {
 }
 
 func TestTencentAIArtImageResponseConvertsURLToBase64WhenRequested(t *testing.T) {
-	t.Parallel()
 
 	imageServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
@@ -197,7 +202,6 @@ func TestTencentAIArtImageResponseConvertsURLToBase64WhenRequested(t *testing.T)
 	}))
 	defer imageServer.Close()
 
-	service.InitHttpClient()
 	oldMaxFileDownloadMB := constant.MaxFileDownloadMB
 	constant.MaxFileDownloadMB = 1
 	fetchSetting := system_setting.GetFetchSetting()
@@ -211,7 +215,6 @@ func TestTencentAIArtImageResponseConvertsURLToBase64WhenRequested(t *testing.T)
 		fetchSetting.AllowedPorts = oldAllowedPorts
 	})
 
-	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 
@@ -267,12 +270,10 @@ func TestTencentAIArtDoRequestSubmitsPollsAndConverts(t *testing.T) {
 	}))
 	defer server.Close()
 
-	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", nil)
 	common.SetContextKey(c, constant.ContextKeyChannelKey, "123456|sid|skey")
-	service.InitHttpClient()
 
 	info := &relaycommon.RelayInfo{
 		RelayMode: relayconstant.RelayModeImagesGenerations,
@@ -314,8 +315,6 @@ func TestTencentAIArtPostUsesProvidedContext(t *testing.T) {
 	}))
 	defer server.Close()
 
-	service.InitHttpClient()
-	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", nil)
 
