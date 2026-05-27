@@ -242,6 +242,14 @@
 - **冲突风险**：极低（新增文件 + main.go 1 行注册；upstream 不太可能在同一位置加同名函数）
 - **Merge 策略**：若 upstream 未来自己加 Prometheus 支持，评估是否迁移到 upstream 实现
 
+### B-20 [audit] 管理员操作审计日志（新增）
+- **新增文件**：`middleware/audit_log.go`（Gin middleware，拦截 admin/root 写操作并输出 [AUDIT] 结构化日志）
+- **修改文件**：`router/api-router.go`（各 admin/root 路由组加 `.Use(middleware.AuditLog())`）
+- **日志格式**：`[AUDIT] user_id=N username=X action=create|update|delete resource=R resource_id=ID ip=X.X.X.X detail={...}`
+- **特殊处理**：Option 变更记录 old_value/new_value diff
+- **冲突风险**：低（新增文件 + router 每组加一行 .Use()，upstream 不太可能在完全相同位置加同名 middleware）
+- **Merge 策略**：upstream 新增路由组时，手动加上 `.Use(middleware.AuditLog())`
+
 ---
 
 ## 前端定制

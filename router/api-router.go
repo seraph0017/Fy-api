@@ -123,6 +123,7 @@ func SetApiRouter(router *gin.Engine) {
 
 			adminRoute := userRoute.Group("/")
 			adminRoute.Use(middleware.AdminAuth())
+			adminRoute.Use(middleware.AuditLog()) // Fy-api overlay: admin audit logging
 			{
 				adminRoute.GET("/", controller.GetAllUsers)
 				adminRoute.GET("/topup", controller.GetAllTopUps)
@@ -157,6 +158,7 @@ func SetApiRouter(router *gin.Engine) {
 		}
 		subscriptionAdminRoute := apiRouter.Group("/subscription/admin")
 		subscriptionAdminRoute.Use(middleware.AdminAuth())
+		subscriptionAdminRoute.Use(middleware.AuditLog()) // Fy-api overlay: admin audit logging
 		{
 			subscriptionAdminRoute.GET("/plans", controller.AdminListSubscriptionPlans)
 			subscriptionAdminRoute.POST("/plans", controller.AdminCreateSubscriptionPlan)
@@ -178,6 +180,7 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.POST("/subscription/epay/return", controller.SubscriptionEpayReturn)
 		optionRoute := apiRouter.Group("/option")
 		optionRoute.Use(middleware.RootAuth())
+		optionRoute.Use(middleware.AuditLog()) // Fy-api overlay: admin audit logging
 		{
 			optionRoute.GET("/", controller.GetOptions)
 			optionRoute.PUT("/", controller.UpdateOption)
@@ -191,6 +194,7 @@ func SetApiRouter(router *gin.Engine) {
 		// Custom OAuth provider management (root only)
 		customOAuthRoute := apiRouter.Group("/custom-oauth-provider")
 		customOAuthRoute.Use(middleware.RootAuth())
+		customOAuthRoute.Use(middleware.AuditLog()) // Fy-api overlay: admin audit logging
 		{
 			customOAuthRoute.POST("/discovery", controller.FetchCustomOAuthDiscovery)
 			customOAuthRoute.GET("/", controller.GetCustomOAuthProviders)
@@ -201,6 +205,7 @@ func SetApiRouter(router *gin.Engine) {
 		}
 		performanceRoute := apiRouter.Group("/performance")
 		performanceRoute.Use(middleware.RootAuth())
+		performanceRoute.Use(middleware.AuditLog()) // Fy-api overlay: admin audit logging
 		{
 			performanceRoute.GET("/stats", controller.GetPerformanceStats)
 			performanceRoute.DELETE("/disk_cache", controller.ClearDiskCache)
@@ -211,12 +216,14 @@ func SetApiRouter(router *gin.Engine) {
 		}
 		ratioSyncRoute := apiRouter.Group("/ratio_sync")
 		ratioSyncRoute.Use(middleware.RootAuth())
+		ratioSyncRoute.Use(middleware.AuditLog()) // Fy-api overlay: admin audit logging
 		{
 			ratioSyncRoute.GET("/channels", controller.GetSyncableChannels)
 			ratioSyncRoute.POST("/fetch", controller.FetchUpstreamRatios)
 		}
 		channelRoute := apiRouter.Group("/channel")
 		channelRoute.Use(middleware.AdminAuth())
+		channelRoute.Use(middleware.AuditLog()) // Fy-api overlay: admin audit logging
 		{
 			channelRoute.GET("/", controller.GetAllChannels)
 			channelRoute.GET("/search", controller.SearchChannels)
@@ -284,6 +291,7 @@ func SetApiRouter(router *gin.Engine) {
 
 		redemptionRoute := apiRouter.Group("/redemption")
 		redemptionRoute.Use(middleware.AdminAuth())
+		redemptionRoute.Use(middleware.AuditLog()) // Fy-api overlay: admin audit logging
 		{
 			redemptionRoute.GET("/", controller.GetAllRedemptions)
 			redemptionRoute.GET("/search", controller.SearchRedemptions)
@@ -317,12 +325,14 @@ func SetApiRouter(router *gin.Engine) {
 		}
 		groupRoute := apiRouter.Group("/group")
 		groupRoute.Use(middleware.AdminAuth())
+		groupRoute.Use(middleware.AuditLog()) // Fy-api overlay: admin audit logging
 		{
 			groupRoute.GET("/", controller.GetGroups)
 		}
 
 		prefillGroupRoute := apiRouter.Group("/prefill_group")
 		prefillGroupRoute.Use(middleware.AdminAuth())
+		prefillGroupRoute.Use(middleware.AuditLog()) // Fy-api overlay: admin audit logging
 		{
 			prefillGroupRoute.GET("/", controller.GetPrefillGroups)
 			prefillGroupRoute.POST("/", controller.CreatePrefillGroup)
@@ -342,6 +352,7 @@ func SetApiRouter(router *gin.Engine) {
 
 		vendorRoute := apiRouter.Group("/vendors")
 		vendorRoute.Use(middleware.AdminAuth())
+		vendorRoute.Use(middleware.AuditLog()) // Fy-api overlay: admin audit logging
 		{
 			vendorRoute.GET("/", controller.GetAllVendors)
 			vendorRoute.GET("/search", controller.SearchVendors)
@@ -353,6 +364,7 @@ func SetApiRouter(router *gin.Engine) {
 
 		modelsRoute := apiRouter.Group("/models")
 		modelsRoute.Use(middleware.AdminAuth())
+		modelsRoute.Use(middleware.AuditLog()) // Fy-api overlay: admin audit logging
 		{
 			modelsRoute.GET("/sync_upstream/preview", controller.SyncUpstreamPreview)
 			modelsRoute.POST("/sync_upstream", controller.SyncUpstreamModels)
@@ -368,6 +380,7 @@ func SetApiRouter(router *gin.Engine) {
 		// Deployments (model deployment management)
 		deploymentsRoute := apiRouter.Group("/deployments")
 		deploymentsRoute.Use(middleware.AdminAuth())
+		deploymentsRoute.Use(middleware.AuditLog()) // Fy-api overlay: admin audit logging
 		{
 			deploymentsRoute.GET("/settings", controller.GetModelDeploymentSettings)
 			deploymentsRoute.POST("/settings/test-connection", controller.TestIoNetConnection)
