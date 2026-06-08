@@ -372,7 +372,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		return fmt.Errorf("readAll failed for task %s: %w", taskId, err)
 	}
 
-	logger.LogDebug(ctx, fmt.Sprintf("updateVideoSingleTask response: %s", string(responseBody)))
+	logger.LogDebug(ctx, "updateVideoSingleTask response: %s", responseBody)
 
 	snap := task.Snapshot()
 
@@ -380,7 +380,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	// try parse as New API response format
 	var responseItems dto.TaskResponse[model.Task]
 	if err = common.Unmarshal(responseBody, &responseItems); err == nil && responseItems.IsSuccess() {
-		logger.LogDebug(ctx, fmt.Sprintf("updateVideoSingleTask parsed as new api response format: %+v", responseItems))
+		logger.LogDebug(ctx, "updateVideoSingleTask parsed as new api response format: %+v", responseItems)
 		t := responseItems.Data
 		taskResult.TaskID = t.TaskID
 		taskResult.Status = string(t.Status)
@@ -394,7 +394,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 
 	task.Data = redactVideoResponseBody(responseBody)
 
-	logger.LogDebug(ctx, fmt.Sprintf("updateVideoSingleTask taskResult: %+v", taskResult))
+	logger.LogDebug(ctx, "updateVideoSingleTask taskResult: %+v", taskResult)
 
 	now := time.Now().Unix()
 	if taskResult.Status == "" {
@@ -488,7 +488,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		}
 	} else {
 		// No changes, skip update
-		logger.LogDebug(ctx, fmt.Sprintf("No update needed for task %s", task.TaskID))
+		logger.LogDebug(ctx, "No update needed for task %s", task.TaskID)
 	}
 
 	if shouldSettle {
@@ -541,20 +541,22 @@ func truncateBase64(s string) string {
 //  2. taskResult.TotalTokens > 0 → 按 token 重算
 //  3. 都不满足 → 保持预扣额度不变
 func settleTaskBillingOnComplete(ctx context.Context, adaptor TaskPollingAdaptor, task *model.Task, taskResult *relaycommon.TaskInfo) {
-	// 0. 按次计费的任务不做差额结算
-	if bc := task.PrivateData.BillingContext; bc != nil && bc.PerCallBilling {
-		logger.LogInfo(ctx, fmt.Sprintf("任务 %s 按次计费，跳过差额结算", task.TaskID))
-		return
-	}
-	// 1. 优先让 adaptor 决定最终额度
+	// Fy-api overlay: let adaptor-provided actual usage settle before per-call skip.
+	// 1. 优先让 adaptor 决定最终额度。部分任务模型有固定的提交预扣费，
+	// 但上游完成态会返回实际用量（例如实际视频秒数），这类场景仍需差额结算。
 	if actualQuota := adaptor.AdjustBillingOnComplete(task, taskResult); actualQuota > 0 {
 		RecalculateTaskQuota(ctx, task, actualQuota, "adaptor计费调整")
 		return
 	}
-	// 2. 回退到 token 重算
+	// 2. 按次计费的任务不做 token 差额结算
+	if bc := task.PrivateData.BillingContext; bc != nil && bc.PerCallBilling {
+		logger.LogInfo(ctx, fmt.Sprintf("任务 %s 按次计费，跳过 token 差额结算", task.TaskID))
+		return
+	}
+	// 3. 回退到 token 重算
 	if taskResult.TotalTokens > 0 {
 		RecalculateTaskQuotaByTokens(ctx, task, taskResult.TotalTokens)
 		return
 	}
-	// 3. 无调整，保持预扣额度
+	// 4. 无调整，保持预扣额度
 }

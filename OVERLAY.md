@@ -1,8 +1,8 @@
 # TraceNex 定制清单（OVERLAY.md）
 
-> 最后更新：2026-05-18（同步上游 `upstream/main`，保留 TraceNex overlay）
+> 最后更新：2026-06-07（同步上游 `upstream/main`，保留 TraceNex overlay）
 > 维护人：<你的名字>
-> 上游基线：new-api @ `5dd0d3bcb` (2026-05-18)
+> 上游基线：new-api @ `4ca47ee2` (2026-06-07)
 >
 > **重要：上游 v1.0（commit `a42b39760`，2026-04-28）把整个老前端搬到了 `web/classic/`，并行新建了 `web/default/`（React 19 + TypeScript + Rsbuild + Base UI + Tailwind）。TraceNex 选择路径 A：所有前端 overlay 跟随 `web/classic/` 路径，runtime theme 锁死在 `"classic"`，不允许切到 default。详见 `docs/上游v1.0前端重写炸弹-影响分析与对策.md`。**
 
@@ -124,16 +124,21 @@
 - **修改文件**：
   - `setting/ratio_setting/model_ratio.go`（新增 `wan2.6-i2v` / `wan2.6-r2v` 视频基础倍率、`wan2.6-t2i` 单图价格）
   - `relay/channel/task/ali/constants.go`（Ali 视频模型列表新增 `wan2.6-i2v` / `wan2.6-r2v`）
-  - `relay/channel/task/ali/adaptor.go`（Ali 计费倍率新增 `wan2.6-r2v`；`wan2.6` 默认分辨率改为 `720P`；分辨率校验前移到 `ValidateRequestAndSetAction` 并在 metadata 反序列化后再校验最终值；`r2v` 首尾帧逻辑放到 metadata 反序列化之后；任务完成时按阿里 `usage.duration` 做实际秒数差额结算）
-  - `relay/channel/task/ali/adaptor_test.go`（覆盖 `wan2.6` 默认分辨率、非法分辨率返回 400、完成态按实际时长结算）
+  - `relay/channel/task/ali/adaptor.go`（Ali 计费倍率新增 `wan2.6-r2v`；`wan2.6` 默认分辨率改为 `720P`；分辨率校验前移到 `ValidateRequestAndSetAction` 并在 metadata 反序列化后再校验最终值；`r2v` 从废弃的 `first_frame_url`/`last_frame_url` 迁移到 DashScope `input.media` 数组格式，向后兼容 `input_reference` + `metadata.last_frame_url` 旧传参；新增 `AliMediaItem` 结构体、`AliVideoInput.Media` 字段、`AliVideoParameters.Ratio` 字段；任务完成时按阿里 `usage.duration` 做实际秒数差额结算）
+  - `relay/channel/task/ali/adaptor_test.go`（覆盖 `wan2.6` 默认分辨率、非法分辨率返回 400、完成态按实际时长结算、r2v media 数组转换、media 优先级、last_frame_url 向后兼容、Ratio metadata 透传、JSON 序列化断言）
+  - `relay/common/relay_info.go`（新增 `TaskMediaItem` 结构体和 `TaskSubmitReq.Media` 字段，支持用户通过 media 数组传入多个参考素材）
+  - `service/task_polling.go`（`// Fy-api overlay:`：任务完成态先执行 adaptor 的实际用量结算，再让 per-call 任务跳过 token 重算，避免按次预扣的视频模型跳过 `usage.duration` 差额结算）
+  - `service/task_billing.go`（`// Fy-api overlay:`：任务消费日志把 `OtherRatios` 写入 `other` JSON，便于 `seconds` / `resolution-*` 报表和 e2e 断言）
   - `web/classic/src/components/table/model-pricing/modal/components/ModelPricingTable.jsx`（遇到 `wan2.6` 视频模型时改为“视频计费”展示）
   - `web/classic/src/components/table/model-pricing/modal/components/VideoPricingDisplay.jsx`（新增分辨率/每秒价格表）
+  - `scripts/ops/media_billing_e2e.py`（新增 cn-test/staging 媒体计费 e2e，用公开 API 覆盖图片固定价格、i2v/r2v 视频任务计费与日志结构化字段）
+  - `docs/reports/2026-06-06-media-billing-audit.md`（生产只读聚合、根因、测试矩阵和 e2e 运行说明）
 - **定价规则**：
   - `wan2.6-t2i`：`0.2` 元/张
   - `wan2.6-i2v` / `wan2.6-r2v`：`720P=0.3` 元/秒，`1080P=0.5` 元/秒
-- **背景**：上游现有模型价格表偏 token/quota 展示，不适合阿里万相这类按分辨率、按秒结算的视频模型；同时 `r2v` 的首尾帧字段若先写入、后做 metadata 通用反序列化，会被覆盖导致请求错误；最初版本还存在默认分辨率偏成 `1080P`、非法分辨率在预扣费后才 500、成功任务未按阿里实际时长结算的问题
-- **冲突风险**：中（`model_ratio.go` 和 `ModelPricingTable.jsx` 都是上游常改文件；`adaptor.go` 未来若继续扩充 Ali metadata 映射也可能冲突）
-- **Merge 策略**：上游若调整视频计费展示或 Ali adaptor，保留这组 `wan2.6` 固定价格规则，并继续确保 `r2v` 首尾帧赋值位于 metadata unmarshal 之后
+- **背景**：上游现有模型价格表偏 token/quota 展示，不适合阿里万相这类按分辨率、按秒结算的视频模型；DashScope wan2.6-r2v API 已废弃 `first_frame_url`/`last_frame_url`，改用 `input.media` 数组传递参考素材（支持多图、视频、音色），旧字段会导致请求被拒返回 `task_id is empty`；最初版本还存在默认分辨率偏成 `1080P`、非法分辨率在预扣费后才 500、成功任务未按阿里实际时长结算的问题。2026-06-06 复查生产媒体日志时发现 `PerCallBilling` 会在轮询完成态提前跳过 adaptor 实际用量结算，已改为 adaptor actual quota 优先；同时补结构化 `OtherRatios` 日志字段和 cn-test e2e。
+- **冲突风险**：中（`model_ratio.go` 和 `ModelPricingTable.jsx` 都是上游常改文件；`adaptor.go` 未来若继续扩充 Ali metadata 映射也可能冲突；`relay_info.go` 新增字段不影响上游已有字段）
+- **Merge 策略**：上游若调整视频计费展示或 Ali adaptor，保留这组 `wan2.6` 固定价格规则；r2v 必须使用 `input.media` 数组格式，不得回退到 `first_frame_url`/`last_frame_url`
 
 ### B-11 [relay] 请求体反序列化失误：500 → 400 + Go 字段名脱敏
 - **新增文件**：
@@ -222,8 +227,17 @@
   - `relay/channel/aws/relay-aws.go`（`sanitizeBedrockClaudeRawFields` +1 行调用 `filterBedrockToolsRaw`）
   - `relay/channel/aws/dto.go`（`sanitizeBedrockClaudeRawFieldsFromStruct` +1 行调用 `filterBedrockToolsFromStruct`）
 - **背景**：SG 生产 momo 客户流量出现 400 `ValidationException: tools.N: Input tag 'web_search_20250305' / 'advisor_20260301' found using 'type' does not match any of the expected tags`。Bedrock Claude Messages 仅接受有限的 tool type 集合，Anthropic 直连支持的扩展 tool type 在 Bedrock 侧会被拒绝。
+
 - **行为**：在发送请求到 Bedrock 前，按白名单过滤 tools 数组中不支持的 type，静默丢弃不兼容工具而非返回 400 给客户端。
 - **冲突风险**：极低（独立新文件 + 两处各 +1 行；与 B-16 同一函数但不同行，合并时仅需保留两行调用）
+
+### B-27 [ops/report] 毛利报表脚本与 agent skill
+- **新增/修改文件**：
+  - `scripts/ops/gross_profit_report.py`（CN/SG 多环境毛利 CSV 报表；本地 RDS 直连失败时自动 SSH 到生产机本地 MySQL 聚合查询；`detail.csv` 按运营表格格式输出：`日期 / 环境 / 用户 / 渠道ID / 渠道 / 模型 / 请求数 / 输入Tokens / 输出Tokens / 折扣倍率 / 收入(USD) / 成本(USD) / 毛利(USD) / 毛利率(%)`）
+  - `scripts/ops/test_gross_profit_report.py`（锁定明细 CSV 表头、列顺序、日志有效折扣倍率、缺失倍率不伪装为 1）
+  - `.agents/skills/gross-profit-report/SKILL.md`（Codex 项目内技能；全局副本需同步到 `~/.codex/skills/gross-profit-report` 和 `~/.claude/skills/gross-profit-report`）
+- **行为**：`折扣倍率` 来自日志 `other.group_ratio` 的聚合有效倍率 `SUM(quota) / SUM(quota / group_ratio)`；缺失/非法倍率在 CSV 中显示 `缺失` 并写入 `warnings.csv`，不能临时写死为 `1`。`channel_costs.yaml` 的 `cost_factor` 只用于成本修正，不作为折扣倍率列展示。日期格式为运营表格使用的 `YYYY/M/D`。
+- **冲突风险**：低（独立运维脚本和 agent 文档，不改 upstream 业务代码）
 
 ### B-18 [aws/bedrock] deprecated temperature 参数过滤
 - **新增文件**：
@@ -249,9 +263,14 @@
 ### B-18 [tencent/aiart] GPT 图片生成同步伪装
 - **新增文件**：
   - `relay/channel/tencent/aiart_image.go`（Tencent AIArt 图片请求转换、TC3 签名、提交/轮询、OpenAI 图片响应转换）
-  - `relay/channel/tencent/aiart_image_test.go`（AIArt host 分支、请求转换、签名 scope、响应转换、提交+查询流程测试）
+  - `relay/channel/tencent/aiart_image_test.go`（AIArt host 分支、请求转换、签名 scope、响应转换、提交+查询流程测试、ResultImages 多形态兼容、错误码 string 兼容、prompt 引号与安全词回归）
 - **修改文件**：`relay/channel/tencent/adaptor.go`（`ConvertImageRequest` / `DoRequest` / `DoResponse` 三处薄分支，均带 `// Fy-api overlay:` 注释）
 - **行为**：后台仍使用现有 `腾讯混元 / Tencent` 渠道和 `AppId|SecretId|SecretKey` 密钥格式；当 `RelayModeImagesGenerations` 且渠道 `base_url` host 为 `aiart.tencentcloudapi.com` 时，后端把 OpenAI `/v1/images/generations` 请求转成腾讯 AIArt `SubmitContentToImageGPTJob`，每 5 秒轮询 `DescribeContentToImageGPTJob`，最长同步等待 10 分钟，然后返回 OpenAI 兼容 image response。
+- **兼容修复**：
+  1. AIArt `Error.Code` 与普通 Tencent chat `Error.Code` 均兼容腾讯返回 string / number 两种形态，避免 `"0"` 触发反序列化失败。
+  2. AIArt 查询结果里的 `ResultImage` / `ResultImages` / `ImageUrls` / `Images` 兼容 string、array（含 object array）和 object，object 中优先抽取 `Url` / `ImageUrl` / `B64Json` 等常见字段。
+  3. AIArt 请求转换阶段对明确的 sexual / violence prompt 做前置 `moderation_blocked` 兜底，并在图片 handler 中按 OpenAI 图片错误语义返回 400，避免腾讯侧混合词审核漏拦时直接出图。
+  4. OpenAI 图片兼容响应默认返回 `b64_json`；只有客户端显式传 `response_format: "url"` 时才透出腾讯 COS URL，保持早期测试通过时的默认行为。
 - **配置**：后台不改 UI。渠道类型选 Tencent，Base URL 填 `https://aiart.tencentcloudapi.com`，模型填 `gpt-image-2`，密钥填 `AppId|SecretId|SecretKey`。不要为该渠道启用 pass-through body；图片价格/倍率仍需按模型单独配置。
 - **冲突风险**：低（核心逻辑在新增文件；`adaptor.go` 仅三处小分支）
 - **Merge 策略**：upstream 若改 Tencent 文本 adaptor，保留 AIArt 分支即可；若 upstream 后续原生支持 AIArt 或图片异步任务，可优先迁移到 upstream 实现，但保留 `AppId|SecretId|SecretKey` 后台兼容配置。

@@ -55,7 +55,7 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 	} else {
 		convertedRequest, err := adaptor.ConvertImageRequest(c, info, *request)
 		if err != nil {
-			return types.NewError(err, types.ErrorCodeConvertRequestFailed)
+			return imageConvertError(err)
 		}
 		relaycommon.AppendRequestConversionFromRequest(info, convertedRequest)
 
@@ -76,10 +76,15 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 				}
 			}
 
-			if common.DebugEnabled {
-				logger.LogDebug(c, fmt.Sprintf("image request body: %s", string(jsonData)))
+			logger.LogDebug(c, "image request body: %s", jsonData)
+			body, size, closer, err := relaycommon.NewOutboundJSONBody(jsonData)
+			if err != nil {
+				return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
 			}
-			requestBody = bytes.NewBuffer(jsonData)
+			defer closer.Close()
+			jsonData = nil
+			info.UpstreamRequestBodySize = size
+			requestBody = body
 		}
 	}
 
@@ -137,7 +142,7 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 
 	quality := request.Quality
 	if quality == "" {
-		quality = "auto"
+		quality = "auto" // Fy-api overlay: B-14 default to "auto" for gpt-image-2 quality
 	}
 
 	var logContent []string
@@ -154,4 +159,15 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 
 	service.PostTextConsumeQuota(c, info, usage.(*dto.Usage), logContent)
 	return nil
+}
+
+func imageConvertError(err error) *types.NewAPIError {
+	if strings.Contains(err.Error(), "moderation_blocked") {
+		return types.WithOpenAIError(types.OpenAIError{
+			Message: err.Error(),
+			Type:    "image_generation_user_error",
+			Code:    "moderation_blocked",
+		}, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+	}
+	return types.NewError(err, types.ErrorCodeConvertRequestFailed)
 }
