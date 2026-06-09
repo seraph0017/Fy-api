@@ -327,6 +327,7 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 			request.Temperature = nil
 			request.TopP = nil
 			request.LogProbs = nil
+			request.Stop = nil
 		}
 
 		// 转换模型推理力度后缀
