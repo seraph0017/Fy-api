@@ -205,7 +205,7 @@ const FooterBar = () => {
               rel='noopener noreferrer'
               className='!text-semi-color-primary font-medium'
             >
-              TraceNex
+              中国移动
             </a>
           </div>
         </div>

@@ -14,9 +14,9 @@ import (
 
 var StartTime = time.Now().Unix() // unit: second
 var Version = "v0.0.0"            // this hard coding will be replaced automatically when building, no need to manually change
-var SystemName = "TraceNex"
+var SystemName = "中国移动"
 var Footer = ""
-var Logo = ""
+var Logo = "/china-mobile-logo.svg"
 var TopUpLink = ""
 
 var themeValue atomic.Value // stores string; safe for concurrent read/write

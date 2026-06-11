@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" role="img" aria-label="中国移动">
+  <rect width="180" height="180" rx="36" fill="#ffffff"/>
+  <circle cx="90" cy="90" r="82" fill="#edf8ff"/>
+  <path d="M45 102C64 66 116 66 135 102" fill="none" stroke="#0085d0" stroke-width="15" stroke-linecap="round"/>
+  <path d="M54 78C71 110 109 110 126 78" fill="none" stroke="#7ac143" stroke-width="15" stroke-linecap="round"/>
+  <text x="90" y="143" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="24" font-weight="700" fill="#0085d0">中国移动</text>
+</svg>
