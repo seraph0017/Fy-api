@@ -92,9 +92,9 @@ fab status --target=sg
 fab logs --target=sg --tail=200
 fab deploy --target=sg --tag=sg-5d733d85
 
-fab preflight --target=legacy
+fab preflight --target=cn-test
 
-fab release --target=test --tag=1.2.3-tracenex --ref=origin/main
+fab release --target=cn-test --tag=1.2.3-tracenex --ref=origin/develop
 ```
 
 Known Fabric targets:
@@ -103,8 +103,8 @@ Known Fabric targets:
 |--------|---------|-----|-------|
 | `cn` | Hangzhou production | `root@8.136.146.211:58422` via `~/.ssh/tracenex_XN.pem` | Builds from `/root/Fy-api`, runtime config in `/opt/fy-api/config/fy-api.env` |
 | `sg` | Singapore production | `root@47.236.133.70:58422` via `~/.ssh/AI_tracenex.pem` | Public URL `https://api.aitracenex.com`; ACR namespace `ai_transnext`; active blue/green behind Nginx |
-| `test` | Chengdu test env | `root@8.156.88.148:58422` via default SSH key/agent | Local build + deploy (no ACR); nginx at `/etc/nginx/conf.d/tracenex-test.conf`; domains `*-test.tracenex.cn` |
-| `legacy` | Legacy source server | `root@8.222.175.17` via default SSH key/agent | Contains old `/root/TraceNex` deployment and local MySQL source data |
+| `cn-test` | Chengdu test env | `root@8.156.88.148:58422` via default SSH key/agent | Local build + deploy (no ACR); nginx at `/etc/nginx/conf.d/tracenex-test.conf`; domains `*-test.tracenex.cn` |
+| `sg-test` | SG test env | `root@8.222.175.17` via default SSH key/agent | Shares legacy host; local build + deploy (no ACR) |
 
 Fabric `release` does: server git fetch/checkout -> `git archive` to `/tmp/fy-api-build` -> server Podman build -> ACR push -> `scripts/prod/06-deploy-blue-green.sh`. For SG, current deployed image tag is `sg-5d733d85`.
 
@@ -112,7 +112,7 @@ Fabric `release` does: server git fetch/checkout -> `git archive` to `/tmp/fy-ap
 
 The SG RDS database `transnext_db` was initialized from the legacy server's self-hosted MySQL on 2026-05-07:
 
-- Source host: `legacy` / `8.222.175.17`
+- Source host: `8.222.175.17` (decommissioned legacy server)
 - Source DBs: `tracenex` plus `tracenex_log.logs`
 - Target: SG RDS `transnext_db`
 - Pre-migration SG backup: `/opt/fy-api/backup/transnext_db-before-legacy-migration-20260507-231343.sql.gz` on the SG server
