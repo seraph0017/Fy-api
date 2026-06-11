@@ -93,7 +93,10 @@
     - `fy_canary/` —— 模型替换检测（alignment + drift + MMD 三种探针）
       - `baseline.py` —— v2 schema 带 `recorded_at_iso` / `n_probes` / `total_samples` / `fy_canary_version`；v1 文件向后兼容
       - `cli.py` —— `baseline` / `audit` / `verify-baseline` 三个子命令；`audit` 默认拒绝超过 30 天的 baseline
-    - `tests/` + `tests_quality/` + `tests_canary/` —— 47 个 `httpx.MockTransport` e2e 测试
+    - `fy_image_conformance/` —— 图片协议一致性 + 质量 + 安全（六阶段：探针→冒烟→API兼容→输出验证→Phase A/B 质量→安全）
+    - `fy_image_canary/` —— 图片金丝雀真实性检测（5A vendor 对比 + 5B 指纹/跨渠道/能力边界）
+    - `fy_score/` —— 统一评分器（五维度加权，文本/图片不同权重，产出 scorecard）
+    - `tests/` + `tests_quality/` + `tests_canary/` + `tests_image_canary/` —— 102 个 e2e 测试
 - **用途**：
   1. **烟测**（Go）—— 生产机上零依赖跑一遍所有渠道，看 TTFT / 存活 / usage 是否正常
   2. **压测**（fy-loadtest）—— 灰度上线前验证单渠道在 N 并发下的分位延迟
@@ -122,23 +125,24 @@
 
 ### B-10 [billing] wan2.6 图像/视频模型定价与展示
 - **修改文件**：
-  - `setting/ratio_setting/model_ratio.go`（新增 `wan2.6-i2v` / `wan2.6-r2v` 视频基础倍率、`wan2.6-t2i` 单图价格）
-  - `relay/channel/task/ali/constants.go`（Ali 视频模型列表新增 `wan2.6-i2v` / `wan2.6-r2v`）
-  - `relay/channel/task/ali/adaptor.go`（Ali 计费倍率新增 `wan2.6-r2v`；`wan2.6` 默认分辨率改为 `720P`；分辨率校验前移到 `ValidateRequestAndSetAction` 并在 metadata 反序列化后再校验最终值；`r2v` 从废弃的 `first_frame_url`/`last_frame_url` 迁移到 DashScope `input.media` 数组格式，向后兼容 `input_reference` + `metadata.last_frame_url` 旧传参；新增 `AliMediaItem` 结构体、`AliVideoInput.Media` 字段、`AliVideoParameters.Ratio` 字段；任务完成时按阿里 `usage.duration` 做实际秒数差额结算）
-  - `relay/channel/task/ali/adaptor_test.go`（覆盖 `wan2.6` 默认分辨率、非法分辨率返回 400、完成态按实际时长结算、r2v media 数组转换、media 优先级、last_frame_url 向后兼容、Ratio metadata 透传、JSON 序列化断言）
-  - `relay/common/relay_info.go`（新增 `TaskMediaItem` 结构体和 `TaskSubmitReq.Media` 字段，支持用户通过 media 数组传入多个参考素材）
+  - `setting/ratio_setting/model_ratio.go`（新增 `wan2.6-i2v` / `wan2.6-r2v` / `wan2.6-r2v-flash` 视频基础倍率、`wan2.6-t2i` 单图价格）
+  - `relay/channel/task/ali/constants.go`（Ali 视频模型列表新增 `wan2.6-i2v` / `wan2.6-r2v` / `wan2.6-r2v-flash`）
+  - `relay/channel/task/ali/adaptor.go`（Ali 计费倍率新增 `wan2.6-r2v` / `wan2.6-r2v-flash`；`wan2.6` 默认分辨率改为 `720P`，其中 `wan2.6-r2v*` 默认 `size=1280*720`；分辨率校验前移到 `ValidateRequestAndSetAction` 并在 metadata 反序列化后再校验最终值；`wan2.6-r2v*` 使用 DashScope `input.reference_urls` + `parameters.size/audio/shot_type/watermark`，向后兼容 `input_reference` + `metadata.last_frame_url` 旧传参，且在没有顶层统一字段时保留 `metadata.input.reference_urls` 原生透传；`wan2.7-r2v*` 保留 `input.media` 数组；新增 `AliMediaItem` 结构体、`AliVideoInput.ReferenceURLs` / `AliVideoInput.Media` 字段、`AliVideoParameters.Ratio` / `ShotType` 字段；任务完成时按阿里 `usage.duration` 做实际秒数差额结算）
+  - `relay/channel/task/ali/adaptor_test.go`（覆盖 `wan2.6` 默认分辨率、非法分辨率返回 400、完成态按实际时长结算、`wan2.6-r2v*` reference_urls 转换、`wan2.7-r2v*` media 转换、last_frame_url 向后兼容、Ratio metadata 透传、metadata 原生 reference_urls 保留、JSON 序列化断言）
+  - `relay/common/relay_info.go`（新增 `TaskMediaItem` 结构体，以及 `TaskSubmitReq.ReferenceURLs` / `Media` / `Audio` / `ShotType` / `Watermark` 字段，支持用户通过 reference_urls 或 media 传入多个参考素材）
   - `service/task_polling.go`（`// Fy-api overlay:`：任务完成态先执行 adaptor 的实际用量结算，再让 per-call 任务跳过 token 重算，避免按次预扣的视频模型跳过 `usage.duration` 差额结算）
   - `service/task_billing.go`（`// Fy-api overlay:`：任务消费日志把 `OtherRatios` 写入 `other` JSON，便于 `seconds` / `resolution-*` 报表和 e2e 断言）
   - `web/classic/src/components/table/model-pricing/modal/components/ModelPricingTable.jsx`（遇到 `wan2.6` 视频模型时改为“视频计费”展示）
   - `web/classic/src/components/table/model-pricing/modal/components/VideoPricingDisplay.jsx`（新增分辨率/每秒价格表）
   - `scripts/ops/media_billing_e2e.py`（新增 cn-test/staging 媒体计费 e2e，用公开 API 覆盖图片固定价格、i2v/r2v 视频任务计费与日志结构化字段）
   - `docs/reports/2026-06-06-media-billing-audit.md`（生产只读聚合、根因、测试矩阵和 e2e 运行说明）
+  - `docs/操作手册-视频模型接入.md`（对客户和运营说明 TraceNex 只暴露统一 OpenAI-like 视频任务协议，阿里 `input` / `parameters` 通过顶层便捷字段或 `metadata` 透传）
 - **定价规则**：
   - `wan2.6-t2i`：`0.2` 元/张
-  - `wan2.6-i2v` / `wan2.6-r2v`：`720P=0.3` 元/秒，`1080P=0.5` 元/秒
-- **背景**：上游现有模型价格表偏 token/quota 展示，不适合阿里万相这类按分辨率、按秒结算的视频模型；DashScope wan2.6-r2v API 已废弃 `first_frame_url`/`last_frame_url`，改用 `input.media` 数组传递参考素材（支持多图、视频、音色），旧字段会导致请求被拒返回 `task_id is empty`；最初版本还存在默认分辨率偏成 `1080P`、非法分辨率在预扣费后才 500、成功任务未按阿里实际时长结算的问题。2026-06-06 复查生产媒体日志时发现 `PerCallBilling` 会在轮询完成态提前跳过 adaptor 实际用量结算，已改为 adaptor actual quota 优先；同时补结构化 `OtherRatios` 日志字段和 cn-test e2e。
+  - `wan2.6-i2v` / `wan2.6-r2v` / `wan2.6-r2v-flash`：`720P=0.3` 元/秒，`1080P=0.5` 元/秒
+- **背景**：上游现有模型价格表偏 token/quota 展示，不适合阿里万相这类按分辨率、按秒结算的视频模型；2026-06-10 复测浙江算力/ DashScope 示例后确认 `wan2.6-r2v*` 应使用 `input.reference_urls`（`input.media` 是 `wan2.7-r2v` 形态）；旧字段或错用 media 会导致上游不返回 task_id。最初版本还存在默认分辨率偏成 `1080P`、非法分辨率在预扣费后才 500、成功任务未按阿里实际时长结算的问题。2026-06-06 复查生产媒体日志时发现 `PerCallBilling` 会在轮询完成态提前跳过 adaptor 实际用量结算，已改为 adaptor actual quota 优先；同时补结构化 `OtherRatios` 日志字段和 cn-test e2e。
 - **冲突风险**：中（`model_ratio.go` 和 `ModelPricingTable.jsx` 都是上游常改文件；`adaptor.go` 未来若继续扩充 Ali metadata 映射也可能冲突；`relay_info.go` 新增字段不影响上游已有字段）
-- **Merge 策略**：上游若调整视频计费展示或 Ali adaptor，保留这组 `wan2.6` 固定价格规则；r2v 必须使用 `input.media` 数组格式，不得回退到 `first_frame_url`/`last_frame_url`
+- **Merge 策略**：上游若调整视频计费展示或 Ali adaptor，保留这组 `wan2.6` 固定价格规则；`wan2.6-r2v*` 必须使用 `input.reference_urls`，`wan2.7-r2v*` 才使用 `input.media`；不得回退到 `first_frame_url`/`last_frame_url`
 
 ### B-11 [relay] 请求体反序列化失误：500 → 400 + Go 字段名脱敏
 - **新增文件**：
@@ -186,7 +190,7 @@
   - 命令：`fy-image-loadtest`
   - 用途：针对 `/v1/images/generations` 的持续压测，支持多渠道 pin、每渠道独立并发、`duration_sec` / `max_requests_per_channel` 结束条件、429 `retry-after` 冷却
 - **新增文件**：`scripts/channel-benchmark/py/image-loadtest.yaml`
-- **本地配置**：`scripts/channel-benchmark/py/image-loadtest.local.yaml`（gitignore）
+- **本地配置约定**：`scripts/channel-benchmark/py/image-loadtest.local.yaml`（gitignore，不入库；需要时从 `image-loadtest.yaml` 复制生成）
 - **修改文件**：
   - `scripts/channel-benchmark/py/pyproject.toml`（注册 `fy-image-loadtest` CLI）
   - `scripts/channel-benchmark/README.md` / `scripts/channel-benchmark/py/README.md`（补图片压测说明）
@@ -209,6 +213,35 @@
   - `scripts/channel-benchmark/py/tests/test_image_loadtest.py`（新增停机回归测试）
 - **行为**：`fy-image-loadtest` 遇到 `余额不足` / `额度不足` / `insufficient quota` 等错误时，立刻停止继续发新请求，已在飞请求自然收尾后输出最终报告
 - **冲突风险**：低（仅 benchmark 子树）
+
+### B-15.1 [benchmark/image] 图片协议一致性 + 质量 + 安全测试套件
+- **新增目录**：`scripts/channel-benchmark/py/fy_image_conformance/`
+  - `cli.py` / `config.py` / `client.py` / `probe.py` / `budget.py` / `report.py`
+  - `suites/api_compat.py` / `output_valid.py` / `prompt_follow.py` / `perf.py` / `safety.py`
+  - 命令：`fy-image-conformance`
+  - 用途：图片渠道六阶段测试（探针 → 冒烟 → API 兼容 → 输出验证 → 内容质量 Phase A/B → 安全抽样），单命令产出结构化 JSON + markdown 报告
+- **新增测试**：`scripts/channel-benchmark/py/tests/test_image_conformance_json.py`、`scripts/channel-benchmark/py/tests/test_phase2_phase3.py`
+- **修改文件**：`scripts/channel-benchmark/py/pyproject.toml`（注册 `fy-image-conformance` CLI）
+- **冲突风险**：极低（benchmark 子树独立新增目录）
+
+### B-15.2 [benchmark/image] 图片金丝雀真实性检测（5A/5B）
+- **新增目录**：`scripts/channel-benchmark/py/fy_image_canary/`
+  - `cli.py` / `config.py` / `client.py` / `verdict.py` / `runner.py` / `runner_5a.py` / `calibrate.py` / `report.py`
+  - `comparators/clip.py` / `histogram.py` / `vlm_judge.py`（5A 三维对比器）
+  - `probes/fingerprint.py` / `cross_channel.py` / `capability.py`（5B 探针）
+  - 命令：`fy-image-canary`
+  - 用途：检测图片渠道是否被静默替换为劣质模型。5A = vendor 直连对比（CLIP + 颜色直方图 + VLM），5B = 无 key 指纹/跨渠道/能力边界探针
+- **新增测试**：`scripts/channel-benchmark/py/tests_image_canary/test_verdict_fix.py`、`test_runner.py`、`test_comparators.py`、`test_fingerprint.py`、`test_config.py`
+- **修改文件**：`scripts/channel-benchmark/py/pyproject.toml`（注册 `fy-image-canary` CLI + `[image-canary]` extras）
+- **冲突风险**：极低（benchmark 子树独立新增目录）
+
+### B-15.3 [benchmark] 统一评分器（文本 + 图片）
+- **新增目录**：`scripts/channel-benchmark/py/fy_score/`
+  - `cli.py` / `scorer.py` / `loader.py` / `report.py`
+  - 命令：`fy-score`
+  - 用途：汇总 loadtest / quality / canary / conformance / integrity 各工具输出，按五维度（可用性/性能/质量/真实性/合规性）加权评分，产出 scorecard.json + scorecard.md。文本和图片使用不同权重体系
+- **修改文件**：`scripts/channel-benchmark/py/pyproject.toml`（注册 `fy-score` CLI）
+- **冲突风险**：极低（benchmark 子树独立新增目录）
 
 ### B-16 [aws/bedrock] Claude `anthropic-beta` 兼容过滤
 - **修改文件**：
