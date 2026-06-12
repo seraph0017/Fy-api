@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 
@@ -174,6 +175,7 @@ func ApplyVideoPipelineSubmitSnapshot(c *gin.Context, task *model.Task, info *re
 		GenerationModel:         plan.Generation.Model,
 		GenerationTaskID:        task.PrivateData.UpstreamTaskID,
 		EnhanceProvider:         "",
+		GenerationCostQuota:     estimateVideoPipelineGenerationCostQuota(task, info),
 		UserBilledQuota:         task.Quota,
 	}
 	if plan.Enhance != nil {
@@ -184,6 +186,30 @@ func ApplyVideoPipelineSubmitSnapshot(c *gin.Context, task *model.Task, info *re
 		p.GenerationChannelID = info.ChannelId
 	}
 	task.PrivateData.SeedanceEnhance = p
+}
+
+func estimateVideoPipelineGenerationCostQuota(task *model.Task, info *relaycommon.RelayInfo) int {
+	if info != nil && info.PriceData.UsePrice && info.PriceData.ModelPrice > 0 {
+		cost := info.PriceData.ModelPrice * common.QuotaPerUnit * info.PriceData.GroupRatioInfo.GroupRatio
+		for key, ratio := range info.PriceData.OtherRatios {
+			if key == "seedance_1080p" {
+				continue
+			}
+			if ratio > 0 {
+				cost *= ratio
+			}
+		}
+		if cost > 0 {
+			return int(cost)
+		}
+	}
+	if task == nil || task.Quota <= 0 || info == nil {
+		return 0
+	}
+	if ratio := info.PriceData.OtherRatios["seedance_1080p"]; ratio > 0 {
+		return int(float64(task.Quota) / ratio)
+	}
+	return task.Quota
 }
 
 func isSeedancePipelineCandidate(info *relaycommon.RelayInfo, req relaycommon.TaskSubmitReq, analysis model.VideoRequestAnalysis) bool {
