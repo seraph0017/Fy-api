@@ -8,6 +8,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -115,6 +116,48 @@ func TestApplyVideoPipelineSubmitSnapshotFallsBackToRelayInfoPlan(t *testing.T) 
 	assert.Equal(t, "720p", task.PrivateData.SeedanceEnhance.GenerationResolution)
 	assert.Equal(t, "1080p", task.PrivateData.SeedanceEnhance.EnhanceTargetResolution)
 	assert.Equal(t, "generation-1", task.PrivateData.SeedanceEnhance.GenerationTaskID)
+}
+
+func TestApplyVideoPipelineSubmitSnapshotSeparatesUserBillingFromProviderCost(t *testing.T) {
+	plan := &VideoPipelinePlan{
+		StrategyName:            VideoPipelineNameSeedanceEnhance,
+		StrategyVersion:         "v1",
+		UserRequestedModel:      "doubao-seedance-2-0-260128",
+		RequestedResolution:     "1080p",
+		RequestedRatio:          "16:9",
+		MatchedGenerationPolicy: "dynamic-default-seedance-2-720p",
+		Generation: VideoGenerationPlan{
+			Provider:   VideoPipelineProviderDoubaoVideo,
+			Model:      "doubao-seedance-2-0-260128",
+			Resolution: "720p",
+		},
+		Enhance: &VideoEnhancePlan{
+			Provider:   VideoPipelineProviderVolcengineMediaKit,
+			Resolution: "1080p",
+		},
+		Fallback: VideoPipelineFallback{EnhanceFailed: VideoPipelineFallbackReturnGeneration},
+	}
+	info := &relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{ChannelId: 87},
+		PriceData: types.PriceData{
+			UsePrice:   true,
+			ModelPrice: 0.13698630137,
+			OtherRatios: map[string]float64{
+				"seedance_1080p": 46.0 / 28.0,
+			},
+			GroupRatioInfo: types.GroupRatioInfo{GroupRatio: 1},
+		},
+		TaskRelayInfo: &relaycommon.TaskRelayInfo{
+			VideoPipelinePlan: plan,
+		},
+	}
+	task := &model.Task{Quota: 112524, PrivateData: model.TaskPrivateData{UpstreamTaskID: "generation-1"}}
+
+	ApplyVideoPipelineSubmitSnapshot(nil, task, info)
+
+	require.NotNil(t, task.PrivateData.SeedanceEnhance)
+	assert.Equal(t, 112524, task.PrivateData.SeedanceEnhance.UserBilledQuota)
+	assert.Equal(t, 68493, task.PrivateData.SeedanceEnhance.GenerationCostQuota)
 }
 
 func TestApplyVideoPipelineSubmitSnapshotRebuildsPlanFromRequest(t *testing.T) {

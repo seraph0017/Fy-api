@@ -132,18 +132,27 @@ func (a *TaskAdaptor) BuildRequestHeader(_ *gin.Context, req *http.Request, _ *r
 	return nil
 }
 
-// EstimateBilling 检测请求 metadata 中是否包含视频输入，返回视频折扣 OtherRatio。
+// EstimateBilling returns user-facing billing ratios from the original request.
 func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) map[string]float64 {
 	req, err := relaycommon.GetTaskRequest(c)
 	if err != nil {
 		return nil
 	}
-	if hasVideoInMetadata(req.Metadata) {
-		if ratio, ok := GetVideoInputRatio(info.OriginModelName); ok {
-			return map[string]float64{"video_input": ratio}
+	ratios := make(map[string]float64)
+	if analysis, err := service.AnalyzeVideoRequest(req); err == nil && analysis.RequestedResolution == "1080p" {
+		if ratio, ok := GetSeedance1080pBillingRatio(info.OriginModelName); ok {
+			ratios["seedance_1080p"] = ratio
 		}
 	}
-	return nil
+	if hasVideoInMetadata(req.Metadata) {
+		if ratio, ok := GetVideoInputRatio(info.OriginModelName); ok {
+			ratios["video_input"] = ratio
+		}
+	}
+	if len(ratios) == 0 {
+		return nil
+	}
+	return ratios
 }
 
 // hasVideoInMetadata 直接检查 metadata 的 content 数组是否包含 video_url 条目，
@@ -375,15 +384,6 @@ func (a *TaskAdaptor) ConvertToOpenAIVideo(originTask *model.Task) ([]byte, erro
 		openAIVideo.SetMetadata("url", resultURL)
 	} else {
 		openAIVideo.SetMetadata("url", dResp.Content.VideoURL)
-	}
-	if p := originTask.PrivateData.SeedanceEnhance; p != nil {
-		openAIVideo.SetMetadata("pipeline", p.Pipeline)
-		openAIVideo.SetMetadata("pipeline_status", p.Status)
-		openAIVideo.SetMetadata("requested_resolution", p.RequestedResolution)
-		openAIVideo.SetMetadata("generation_resolution", p.GenerationResolution)
-		openAIVideo.SetMetadata("enhance_target_resolution", p.EnhanceTargetResolution)
-		openAIVideo.SetMetadata("matched_generation_policy", p.MatchedGenerationPolicy)
-		openAIVideo.SetMetadata("matched_enhance_policy", p.MatchedEnhancePolicy)
 	}
 	openAIVideo.CreatedAt = originTask.CreatedAt
 	openAIVideo.CompletedAt = originTask.UpdatedAt
