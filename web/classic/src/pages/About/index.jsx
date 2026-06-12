@@ -63,7 +63,7 @@ const About = () => {
     <div style={{ textAlign: 'center' }}>
       <p>{t('可在设置页面设置关于内容，支持 HTML & Markdown')}</p>
       <p>
-        中国移动{' '}
+        移动站点{' '}
         {t('© {{currentYear}}', { currentYear })}{' '}
         <a
           href='https://github.com/seraph0017/Fy-api'

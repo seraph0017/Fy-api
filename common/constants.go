@@ -14,9 +14,9 @@ import (
 
 var StartTime = time.Now().Unix() // unit: second
 var Version = "v0.0.0"            // this hard coding will be replaced automatically when building, no need to manually change
-var SystemName = "中国移动"
+var SystemName = "移动站点"
 var Footer = ""
-var Logo = "/china-mobile-logo.svg"
+var Logo = "/mobile-site-logo.svg"
 var TopUpLink = ""
 
 var themeValue atomic.Value // stores string; safe for concurrent read/write

@@ -23,7 +23,7 @@
 
 ### B-1 [brand] 系统名
 - **文件**：`common/constants.go`
-- **修改**：`var SystemName = "中国移动"`（原 `"New API"`），`var Logo = "/china-mobile-logo.svg"`
+- **修改**：`var SystemName = "移动站点"`（原 `"New API"`），`var Logo = "/mobile-site-logo.svg"`
 - **新增变量**：`var MaxLogExportItems = 50000`
 - **冲突风险**：低（上游很少改这两行）
 - **Merge 策略**：如果 upstream 又加了变量，手动合并到此文件
@@ -403,26 +403,26 @@
 
 ### F-1 [brand] 浏览器 tab + icon
 - **文件**：`web/classic/index.html`
-- **修改**：`<title>中国移动</title>` + `<link rel="icon" href="/china-mobile-logo.svg?v=1" />`
+- **修改**：`<title>移动站点</title>` + `<link rel="icon" href="/mobile-site-logo.svg?v=1" />`
 - **冲突风险**：中（上游会改 meta description）
-- **Merge 策略**：title 和 icon 两处坚持用中国移动；meta description 可接受 upstream
+- **Merge 策略**：title 和 icon 两处坚持用移动站点；meta description 可接受 upstream
 
 ### F-2 [brand] Logo 和 favicon
-- **新增**：`web/classic/public/china-mobile-logo.svg`
+- **新增**：`web/classic/public/mobile-site-logo.svg`
 - **替换**：`web/classic/public/favicon.ico`
 - **冲突风险**：低（上游偶尔更新 logo.png，我们用 new_logo.png 独立）
 - **注意**：v1.0 merge 时 git 的 directory-rename 启发式会把 public 资源建议到 `web/default/public/`，**必须手动改到 `web/classic/public/`**
 
 ### F-3 [i18n] 品牌词替换
 - **修改文件**：`web/classic/src/i18n/locales/{zh-CN,zh-TW,zh,en,fr,ja,ru,vi}.json`（v1.0 合并后多了一个 `zh.json`）
-- **变化**：所有 value 中 `New API` / `TraceNex` → `中国移动`
+- **变化**：所有 value 中 `New API` / `TraceNex` → `移动站点`
 - **冲突风险**：高（上游每月增改几十个翻译 key）
 - **Merge 策略**：
   ```bash
   # 每次 merge 上游的 locales 之后：
   for lang in zh-CN zh-TW zh en fr ja ru vi; do
     f="web/classic/src/i18n/locales/${lang}.json"
-    jq '(.translation |= with_entries(.value |= (gsub("New API"; "中国移动") | gsub("TraceNex"; "中国移动"))))' "$f" > "/tmp/rebrand-${lang}.json"
+    jq '(.translation |= with_entries(.value |= (gsub("New API"; "移动站点") | gsub("TraceNex"; "移动站点"))))' "$f" > "/tmp/rebrand-${lang}.json"
     cp "/tmp/rebrand-${lang}.json" "$f"
   done
   ```

@@ -62,7 +62,7 @@ export default function FyApiDocs() {
   if (loading) {
     return (
       <div style={{ padding: '50px', textAlign: 'center' }}>
-        <h3>正在加载 中国移动 说明手册...</h3>
+        <h3>正在加载 移动站点 说明手册...</h3>
       </div>
     );
   }
@@ -93,7 +93,7 @@ export default function FyApiDocs() {
         fontWeight: '600',
         fontFamily: 'Microsoft YaHei", sans-serif',
         color: 'rgb(31, 35, 41)'
-      }}>中国移动 说明手册</h1>
+      }}>移动站点 说明手册</h1>
       <NewMarkdownRenderer
         content={mdContent}
         loading={false}

@@ -48,13 +48,13 @@ export function isRoot() {
 
 export function getSystemName() {
   let system_name = localStorage.getItem('system_name');
-  if (!system_name) return '中国移动';
+  if (!system_name) return '移动站点';
   return system_name;
 }
 
 export function getLogo() {
   let logo = localStorage.getItem('logo');
-  if (!logo) return '/china-mobile-logo.svg';
+  if (!logo) return '/mobile-site-logo.svg';
   return logo;
 }
 

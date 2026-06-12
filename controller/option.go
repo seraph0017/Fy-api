@@ -225,7 +225,7 @@ func UpdateOption(c *gin.Context) {
 		if option.Value != "classic" {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
-				"message": "中国移动当前仅支持 classic 主题，default 主题已构建但未启用",
+				"message": "移动站点当前仅支持 classic 主题，default 主题已构建但未启用",
 			})
 			return
 		}

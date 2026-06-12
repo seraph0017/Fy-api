@@ -205,7 +205,7 @@ const FooterBar = () => {
               rel='noopener noreferrer'
               className='!text-semi-color-primary font-medium'
             >
-              中国移动
+              移动站点
             </a>
           </div>
         </div>

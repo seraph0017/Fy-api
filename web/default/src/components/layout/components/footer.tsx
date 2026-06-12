@@ -157,8 +157,8 @@ export function Footer(props: FooterProps) {
     demoSiteEnabled,
   } = useSystemConfig()
 
-  const displayLogo = systemLogo || props.logo || '/china-mobile-logo.svg'
-  const displayName = systemName || props.name || '中国移动'
+  const displayLogo = systemLogo || props.logo || '/mobile-site-logo.svg'
+  const displayName = systemName || props.name || '移动站点'
   const isDemoSiteMode = Boolean(demoSiteEnabled)
   const currentYear = new Date().getFullYear()
 
