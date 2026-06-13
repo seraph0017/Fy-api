@@ -37,7 +37,7 @@ func TestAnalyzeVideoRequest_StaticPromptAndReferences(t *testing.T) {
 	assert.Equal(t, "static_or_low_motion", analysis.MotionClass)
 }
 
-func TestBuildVideoPipelinePlan_SelectsStoryboardPolicy(t *testing.T) {
+func TestBuildVideoPipelinePlan_KeepsSeedance2ForStoryboardRequests(t *testing.T) {
 	t.Setenv("SEEDANCE_PIPELINE_ENABLED", "true")
 	t.Setenv("SEEDANCE_PIPELINE_TRAFFIC_PERCENT", "100")
 
@@ -55,8 +55,8 @@ func TestBuildVideoPipelinePlan_SelectsStoryboardPolicy(t *testing.T) {
 	plan, err := BuildVideoPipelinePlan(nil, info, req)
 	require.NoError(t, err)
 	require.NotNil(t, plan)
-	assert.Equal(t, "storyboard-compat-seedance-legacy", plan.MatchedGenerationPolicy)
-	assert.Equal(t, "doubao-seedance-1-5-pro-251215", plan.Generation.Model)
+	assert.Equal(t, "dynamic-default-seedance-2-720p", plan.MatchedGenerationPolicy)
+	assert.Equal(t, "doubao-seedance-2-0-260128", plan.Generation.Model)
 	assert.Equal(t, "720p", plan.Generation.Resolution)
 	require.NotNil(t, plan.Enhance)
 	assert.Equal(t, "1080p", plan.Enhance.Resolution)

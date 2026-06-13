@@ -395,7 +395,7 @@
 - **行为**：请求发往 Bedrock 前，静默移除 system/messages 中所有 `cache_control.scope`，并过滤掉空 text content block。不改变请求语义——`cache_control.type` 保留，非空 text block 保留。
 - **冲突风险**：极低（独立新文件 + 两处各 +2 行，与 B-17 同一函数但不同行）
 
-### B-28 [video/pipeline] Seedance 1080p 多策略生成 + 火山增强 pipeline
+### B-28 [video/pipeline] Seedance 1080p 同模型降分辨率 + 火山增强 pipeline
 - **新增文件**：
   - `service/video_pipeline_strategy.go`
   - `service/video_pipeline_analysis.go`
@@ -414,7 +414,7 @@
   - `service/video_pipeline_strategy_test.go`
   - `relay/channel/task/doubao/adaptor_pipeline_test.go`
   - `model/task_seedance_enhance_test.go`
-- **行为**：用户仍按请求模型/1080p 产品价计费；内部按 analysis/generation/enhance 三段策略决定是否用 720p generation + 火山 MediaKit 1080p 标准增强。内部 generation/enhance task id、策略命中、字段映射/丢弃、供应商成本记录在 `PrivateData.SeedanceEnhance`，不直接返回用户。
+- **行为**：用户仍按请求模型/1080p 产品价计费；内部仅将 Seedance 2.0 1080p 请求改为同一 Seedance 2.0 模型的 720p generation + 火山 MediaKit 1080p 标准增强，不再按 storyboard、静态 prompt、多参考图等请求特征切换到 1.5-pro 或其它 generation 模型。内部 generation/enhance task id、策略命中、字段映射/丢弃、供应商成本记录在 `PrivateData.SeedanceEnhance`，不直接返回用户。
 - **冲突风险**：中（`service/task_polling.go` 和 `relay/channel/task/doubao/adaptor.go` 是 upstream 活跃区域）
 - **Merge 策略**：主体逻辑保留在新增 service/model 文件中；upstream 合并时只重放 controller/adaptor/polling 的极薄 `// Fy-api overlay:` hook。不得把策略判断写进 controller 或把火山增强状态机写进 Doubao adaptor。
 
