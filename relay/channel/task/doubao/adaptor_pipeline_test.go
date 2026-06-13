@@ -43,11 +43,11 @@ func TestBuildRequestBodyAppliesVideoPipelinePlan(t *testing.T) {
 	var payload map[string]any
 	require.NoError(t, common.Unmarshal(raw, &payload))
 
-	assert.Equal(t, "doubao-seedance-1-5-pro-251215", payload["model"])
+	assert.Equal(t, "doubao-seedance-2-0-260128", payload["model"])
 	assert.Equal(t, "720p", payload["resolution"])
 	plan, ok := service.GetVideoPipelinePlan(c)
 	require.True(t, ok)
-	assert.Equal(t, "static-prompt-low-cost-720p", plan.MatchedGenerationPolicy)
+	assert.Equal(t, "dynamic-default-seedance-2-720p", plan.MatchedGenerationPolicy)
 }
 
 func TestEstimateBillingChargesRequestedSeedance1080pTier(t *testing.T) {
