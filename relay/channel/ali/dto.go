@@ -1,6 +1,7 @@
 package ali
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/dto"
@@ -63,9 +64,30 @@ type AliEmbeddingResponse struct {
 }
 
 type AliError struct {
-	Code      string `json:"code"`
-	Message   string `json:"message"`
-	RequestId string `json:"request_id"`
+	Code      aliCode `json:"code"`
+	Message   string  `json:"message"`
+	RequestId string  `json:"request_id"`
+}
+
+// Fy-api overlay: B-18.1 accept Ali/Wanxiang error codes returned as JSON numbers.
+type aliCode string
+
+func (c *aliCode) UnmarshalJSON(data []byte) error {
+	raw := strings.TrimSpace(string(data))
+	if raw == "" || raw == "null" {
+		*c = ""
+		return nil
+	}
+	if strings.HasPrefix(raw, `"`) {
+		value, err := strconv.Unquote(raw)
+		if err != nil {
+			return err
+		}
+		*c = aliCode(value)
+		return nil
+	}
+	*c = aliCode(raw)
+	return nil
 }
 
 type AliUsage struct {
@@ -76,10 +98,10 @@ type AliUsage struct {
 }
 
 type TaskResult struct {
-	B64Image string `json:"b64_image,omitempty"`
-	Url      string `json:"url,omitempty"`
-	Code     string `json:"code,omitempty"`
-	Message  string `json:"message,omitempty"`
+	B64Image string  `json:"b64_image,omitempty"`
+	Url      string  `json:"url,omitempty"`
+	Code     aliCode `json:"code,omitempty"`
+	Message  string  `json:"message,omitempty"`
 }
 
 type AliOutput struct {
@@ -88,7 +110,7 @@ type AliOutput struct {
 	Text         string       `json:"text"`
 	FinishReason string       `json:"finish_reason"`
 	Message      string       `json:"message,omitempty"`
-	Code         string       `json:"code,omitempty"`
+	Code         aliCode      `json:"code,omitempty"`
 	Results      []TaskResult `json:"results,omitempty"`
 	Choices      []struct {
 		FinishReason string `json:"finish_reason,omitempty"`

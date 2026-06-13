@@ -48,9 +48,10 @@ func RerankHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayI
 	if aliResponse.Code != "" {
 		return types.WithOpenAIError(types.OpenAIError{
 			Message: aliResponse.Message,
-			Type:    aliResponse.Code,
-			Param:   aliResponse.RequestId,
-			Code:    aliResponse.Code,
+			// Fy-api overlay: B-18.1 aliCode is string-compatible but needs explicit conversion for Type.
+			Type:  string(aliResponse.Code),
+			Param: aliResponse.RequestId,
+			Code:  aliResponse.Code,
 		}, resp.StatusCode), nil
 	}
 
