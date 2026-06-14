@@ -3701,6 +3701,18 @@
     "并确认自行承担部署": "confirm that I bear legal responsibility arising from deployment",
     "运营和收费行为产生的法律责任": "operation and charging behavior",
     "，": ", ",
-    "、": ", "
+    "、": ", ",
+    "Seedance 真人素材库": "Библиотека ассетов Seedance для реальных людей",
+    "用于 Seedance 2.0 真人参考图的 Ark Asset Service。普通生成继续使用上方渠道密钥。": "Ark Asset Service для референсных изображений реальных людей в Seedance 2.0. Обычная генерация продолжает использовать ключ канала выше.",
+    "素材库 Access Key": "Access Key библиотеки ассетов",
+    "素材库 Secret Key": "Secret Key библиотеки ассетов",
+    "请输入素材库 Secret Key": "Введите Secret Key библиотеки ассетов",
+    "素材库 Group ID": "Group ID библиотеки ассетов",
+    "请输入火山素材库 Group ID": "Введите Group ID библиотеки ассетов Volcengine",
+    "素材库 Project Name": "Project Name библиотеки ассетов",
+    "素材库 Region": "Регион библиотеки ассетов",
+    "素材库超时秒数": "Тайм-аут библиотеки ассетов в секундах",
+    "素材库 Endpoint": "Endpoint библиотеки ассетов",
+    "可选，留空使用火山默认 Endpoint": "Необязательно. Оставьте пустым, чтобы использовать endpoint Volcengine по умолчанию"
   }
 }

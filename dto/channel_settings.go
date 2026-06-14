@@ -31,7 +31,7 @@ type ChannelOtherSettings struct {
 	AllowServiceTier                      bool          `json:"allow_service_tier,omitempty"`        // 是否允许 service_tier 透传（默认过滤以避免额外计费）
 	AllowInferenceGeo                     bool          `json:"allow_inference_geo,omitempty"`       // 是否允许 inference_geo 透传（仅 Claude，默认过滤以满足数据驻留合规
 	AllowSpeed                            bool          `json:"allow_speed,omitempty"`               // 是否允许 speed 透传（仅 Claude，默认过滤以避免意外切换推理速度模式）
-	AllowContextManagement                bool          `json:"allow_context_management,omitempty"` // 是否允许 context_management 透传（仅 Claude，默认过滤；该字段需上游 anthropic-beta header 配合，未授权透传会被 Anthropic 直接拒绝。Fy-api overlay）
+	AllowContextManagement                bool          `json:"allow_context_management,omitempty"`  // 是否允许 context_management 透传（仅 Claude，默认过滤；该字段需上游 anthropic-beta header 配合，未授权透传会被 Anthropic 直接拒绝。Fy-api overlay）
 	AllowSafetyIdentifier                 bool          `json:"allow_safety_identifier,omitempty"`   // 是否允许 safety_identifier 透传（默认过滤以保护用户隐私）
 	DisableStore                          bool          `json:"disable_store,omitempty"`             // 是否禁用 store 透传（默认允许透传，禁用后可能导致 Codex 无法使用）
 	AllowIncludeObfuscation               bool          `json:"allow_include_obfuscation,omitempty"` // 是否允许 stream_options.include_obfuscation 透传（默认过滤以避免关闭流混淆保护）
@@ -42,6 +42,14 @@ type ChannelOtherSettings struct {
 	UpstreamModelUpdateLastDetectedModels []string      `json:"upstream_model_update_last_detected_models,omitempty"` // 上次检测到的可加入模型
 	UpstreamModelUpdateLastRemovedModels  []string      `json:"upstream_model_update_last_removed_models,omitempty"`  // 上次检测到的可删除模型
 	UpstreamModelUpdateIgnoredModels      []string      `json:"upstream_model_update_ignored_models,omitempty"`       // 手动忽略的模型
+	// Fy-api overlay: Seedance 2.0 Ark Asset Service credentials are channel-scoped.
+	SeedanceAssetAccessKey      string `json:"seedance_asset_access_key,omitempty"`
+	SeedanceAssetSecretKey      string `json:"seedance_asset_secret_key,omitempty"`
+	SeedanceAssetGroupID        string `json:"seedance_asset_group_id,omitempty"`
+	SeedanceAssetProjectName    string `json:"seedance_asset_project_name,omitempty"`
+	SeedanceAssetRegion         string `json:"seedance_asset_region,omitempty"`
+	SeedanceAssetEndpoint       string `json:"seedance_asset_endpoint,omitempty"`
+	SeedanceAssetTimeoutSeconds int    `json:"seedance_asset_timeout_seconds,omitempty"`
 }
 
 func (s *ChannelOtherSettings) IsOpenRouterEnterprise() bool {

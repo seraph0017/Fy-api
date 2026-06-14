@@ -96,7 +96,9 @@
     - `fy_image_conformance/` —— 图片协议一致性 + 质量 + 安全（六阶段：探针→冒烟→API兼容→输出验证→Phase A/B 质量→安全）
     - `fy_image_canary/` —— 图片金丝雀真实性检测（5A vendor 对比 + 5B 指纹/跨渠道/能力边界）
     - `fy_score/` —— 统一评分器（五维度加权，文本/图片不同权重，产出 scorecard）
+    - `seedance_gateway_vs_volcengine.py` —— Seedance 2.0 网关 vs 火山直连对照脚本，用于排查上游内容安全和网关转换差异
     - `tests/` + `tests_quality/` + `tests_canary/` + `tests_image_canary/` —— 102 个 e2e 测试
+  - `docs/seedance-real-person-video-support-plan.md` —— 基于 DJLine 可信素材链路整理的 SD2.0 真人视频支持方案
 - **用途**：
   1. **烟测**（Go）—— 生产机上零依赖跑一遍所有渠道，看 TTFT / 存活 / usage 是否正常
   2. **压测**（fy-loadtest）—— 灰度上线前验证单渠道在 N 并发下的分位延迟
@@ -417,6 +419,25 @@
 - **行为**：用户仍按请求模型/1080p 产品价计费；内部仅将 Seedance 2.0 1080p 请求改为同一 Seedance 2.0 模型的 720p generation + 火山 MediaKit 1080p 标准增强，不再按 storyboard、静态 prompt、多参考图等请求特征切换到 1.5-pro 或其它 generation 模型。内部 generation/enhance task id、策略命中、字段映射/丢弃、供应商成本记录在 `PrivateData.SeedanceEnhance`，不直接返回用户。
 - **冲突风险**：中（`service/task_polling.go` 和 `relay/channel/task/doubao/adaptor.go` 是 upstream 活跃区域）
 - **Merge 策略**：主体逻辑保留在新增 service/model 文件中；upstream 合并时只重放 controller/adaptor/polling 的极薄 `// Fy-api overlay:` hook。不得把策略判断写进 controller 或把火山增强状态机写进 Doubao adaptor。
+
+### B-29 [relay/video] Seedance 2.0 真人参考图可信素材准备
+- **新增文件**：
+  - `service/seedance_asset_client.go` / `service/seedance_asset_client_test.go`（火山 Ark Asset Service `CreateAsset` / `GetAsset` 客户端，状态归一为 `creating/processing/active/failed`）
+  - `relay/channel/task/doubao/seedance_asset_prepare.go` / `_test.go`（识别 Seedance 2.0 图片参考、保存请求快照、`asset://...` 改写、prepared submit）
+  - `docs/seedance-real-person-video-support-plan.md`
+  - `scripts/ops/seedance_gateway_vs_volcengine.py`
+- **修改文件**：
+  - `dto/channel_settings.go`（`ChannelOtherSettings` 新增 `seedance_asset_*` 渠道级配置字段）
+  - `model/task.go`（`TaskPrivateData.SeedanceAssetPrepare` 保存素材准备状态和原始请求快照）
+  - `relay/relay_task.go`（`// Fy-api overlay:`：Seedance 2.0 + HTTP 图片参考命中时，提交阶段返回本地 task，不立即投递上游）
+  - `service/task_polling.go`（`// Fy-api overlay:`：轮询阶段先创建/查询 Ark asset，active 后用 `asset://<provider_asset_id>` 二次提交 Seedance）
+  - `controller/relay.go`（`// Fy-api overlay:`：把 submit result 中的 staged private data 写入 task）
+  - `web/classic/src/components/table/channels/modals/EditChannelModal.jsx`（`// Fy-api overlay:`：type 45 渠道编辑弹窗显示 Seedance 真人素材库配置，写入 `settings` JSON）
+  - `web/classic/src/i18n/locales/{zh-CN,zh-TW,zh,en,fr,ja,ru,vi}.json`（新增 Seedance 真人素材库配置文案）
+  - `go.mod` / `go.sum`（新增 `github.com/volcengine/volcengine-go-sdk`）
+- **配置**：不改 `channels` 表结构。现有 type 45 渠道继续用 `channel.key` 调主视频接口；Ark Asset Service 凭证存入渠道 `settings` JSON：`seedance_asset_access_key`、`seedance_asset_secret_key`、`seedance_asset_group_id`，可选 `seedance_asset_project_name` / `seedance_asset_region` / `seedance_asset_endpoint` / `seedance_asset_timeout_seconds`
+- **行为**：客户仍通过 `/v1/videos` 传普通真人图片 URL；fy-api 内部异步准备可信素材，审核通过后改写成 `asset://...` 再提交 Seedance。素材创建/审核/二次提交失败时任务失败并复用现有异步任务退款逻辑。
+- **冲突风险**：中（`relay/relay_task.go` 和 `service/task_polling.go` 是任务提交/轮询核心；保留 overlay 注释和单测，upstream 同步时不能丢掉 staged task 的 private data）
 
 ---
 

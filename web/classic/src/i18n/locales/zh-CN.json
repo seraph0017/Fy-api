@@ -3817,6 +3817,18 @@
     "并确认自行承担部署": "并确认自行承担部署",
     "运营和收费行为产生的法律责任": "运营和收费行为产生的法律责任",
     "，": "，",
-    "、": "、"
+    "、": "、",
+    "Seedance 真人素材库": "Seedance 真人素材库",
+    "用于 Seedance 2.0 真人参考图的 Ark Asset Service。普通生成继续使用上方渠道密钥。": "用于 Seedance 2.0 真人参考图的 Ark Asset Service。普通生成继续使用上方渠道密钥。",
+    "素材库 Access Key": "素材库 Access Key",
+    "素材库 Secret Key": "素材库 Secret Key",
+    "请输入素材库 Secret Key": "请输入素材库 Secret Key",
+    "素材库 Group ID": "素材库 Group ID",
+    "请输入火山素材库 Group ID": "请输入火山素材库 Group ID",
+    "素材库 Project Name": "素材库 Project Name",
+    "素材库 Region": "素材库 Region",
+    "素材库超时秒数": "素材库超时秒数",
+    "素材库 Endpoint": "素材库 Endpoint",
+    "可选，留空使用火山默认 Endpoint": "可选，留空使用火山默认 Endpoint"
   }
 }

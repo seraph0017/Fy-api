@@ -103,11 +103,43 @@ type TaskPrivateData struct {
 	// Fy-api overlay: Seedance/Volcengine video pipeline snapshot. Stored only in
 	// private_data so public task IDs and API responses stay upstream-compatible.
 	SeedanceEnhance *SeedanceEnhancePipeline `json:"seedance_enhance,omitempty"`
+	// Fy-api overlay: Seedance 2.0 real-person references may need provider trusted assets before upstream submit.
+	SeedanceAssetPrepare *SeedanceAssetPrepareData `json:"seedance_asset_prepare,omitempty"`
 	// 计费上下文：用于异步退款/差额结算（轮询阶段读取）
 	BillingSource  string              `json:"billing_source,omitempty"`  // "wallet" 或 "subscription"
 	SubscriptionId int                 `json:"subscription_id,omitempty"` // 订阅 ID，用于订阅退款
 	TokenId        int                 `json:"token_id,omitempty"`        // 令牌 ID，用于令牌额度退款
 	BillingContext *TaskBillingContext `json:"billing_context,omitempty"` // 计费参数快照（用于轮询阶段重新计算）
+}
+
+const (
+	SeedanceAssetPrepareStageCreating   = "creating"
+	SeedanceAssetPrepareStageProcessing = "processing"
+	SeedanceAssetPrepareStageActive     = "active"
+	SeedanceAssetPrepareStageSubmitted  = "submitted"
+	SeedanceAssetPrepareStageFailed     = "failed"
+)
+
+type SeedanceAssetPrepareData struct {
+	Stage        string                     `json:"stage,omitempty"`
+	Request      *commonRelay.TaskSubmitReq `json:"request,omitempty"`
+	References   []SeedanceAssetReference   `json:"references,omitempty"`
+	ErrorCode    string                     `json:"error_code,omitempty"`
+	ErrorMessage string                     `json:"error_message,omitempty"`
+	RequestedAt  int64                      `json:"requested_at,omitempty"`
+	SyncedAt     int64                      `json:"synced_at,omitempty"`
+	SubmittedAt  int64                      `json:"submitted_at,omitempty"`
+}
+
+type SeedanceAssetReference struct {
+	Ordinal      int    `json:"ordinal"`
+	SourceURL    string `json:"source_url,omitempty"`
+	AssetID      string `json:"asset_id,omitempty"`
+	URI          string `json:"uri,omitempty"`
+	Status       string `json:"status,omitempty"`
+	ErrorCode    string `json:"error_code,omitempty"`
+	ErrorMessage string `json:"error_message,omitempty"`
+	SyncedAt     int64  `json:"synced_at,omitempty"`
 }
 
 // TaskBillingContext 记录任务提交时的计费参数，以便轮询阶段可以重新计算额度。

@@ -3674,6 +3674,18 @@
     "并确认自行承担部署": "並確認自行承擔部署",
     "运营和收费行为产生的法律责任": "營運和收費行為產生的法律責任",
     "，": "，",
-    "、": "、"
+    "、": "、",
+    "Seedance 真人素材库": "Seedance 真人素材庫",
+    "用于 Seedance 2.0 真人参考图的 Ark Asset Service。普通生成继续使用上方渠道密钥。": "用於 Seedance 2.0 真人參考圖的 Ark Asset Service。普通生成繼續使用上方渠道密鑰。",
+    "素材库 Access Key": "素材庫 Access Key",
+    "素材库 Secret Key": "素材庫 Secret Key",
+    "请输入素材库 Secret Key": "請輸入素材庫 Secret Key",
+    "素材库 Group ID": "素材庫 Group ID",
+    "请输入火山素材库 Group ID": "請輸入火山素材庫 Group ID",
+    "素材库 Project Name": "素材庫 Project Name",
+    "素材库 Region": "素材庫 Region",
+    "素材库超时秒数": "素材庫逾時秒數",
+    "素材库 Endpoint": "素材庫 Endpoint",
+    "可选，留空使用火山默认 Endpoint": "可選，留空使用火山預設 Endpoint"
   }
 }
