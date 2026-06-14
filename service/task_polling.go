@@ -515,8 +515,48 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	if shouldRefund {
 		RefundTaskQuota(ctx, task, task.FailReason)
 	}
+	if isDone {
+		cleanupSeedanceAssetsAfterTaskDone(ctx, ch, task)
+	}
 
 	return nil
+}
+
+func cleanupSeedanceAssetsAfterTaskDone(ctx context.Context, ch *model.Channel, task *model.Task) {
+	if ch == nil || task == nil || task.PrivateData.SeedanceAssetPrepare == nil {
+		return
+	}
+	prepare := task.PrivateData.SeedanceAssetPrepare
+	if len(prepare.References) == 0 {
+		return
+	}
+	client := NewSeedanceAssetClientFromChannelSettings(ch.GetOtherSettings())
+	now := time.Now().Unix()
+	changed := false
+	for i := range prepare.References {
+		ref := &prepare.References[i]
+		if ref.AssetID == "" || ref.CleanupStatus == "deleted" {
+			continue
+		}
+		if err := client.DeleteAsset(ctx, ref.AssetID); err != nil {
+			ref.CleanupStatus = "failed"
+			ref.CleanupError = err.Error()
+			ref.CleanupAt = now
+			changed = true
+			logger.LogWarn(ctx, fmt.Sprintf("Seedance asset cleanup failed task=%s asset=%s err=%s", task.TaskID, ref.AssetID, err.Error()))
+			continue
+		}
+		ref.CleanupStatus = "deleted"
+		ref.CleanupError = ""
+		ref.CleanupAt = now
+		changed = true
+	}
+	if !changed {
+		return
+	}
+	if _, err := task.UpdateWithStatus(task.Status); err != nil {
+		logger.LogWarn(ctx, fmt.Sprintf("Seedance asset cleanup status update failed task=%s err=%s", task.TaskID, err.Error()))
+	}
 }
 
 func progressSeedanceAssetPrepare(ctx context.Context, adaptor TaskPollingAdaptor, ch *model.Channel, task *model.Task, baseURL, key, proxy string) (bool, error) {
@@ -541,14 +581,14 @@ func progressSeedanceAssetPrepare(ctx context.Context, adaptor TaskPollingAdapto
 			result, err := client.CreateAsset(ctx, ref.SourceURL)
 			if err != nil {
 				markSeedanceAssetPrepareFailed(task, prepare, "provider_asset_error", err.Error(), now)
-				return true, updateSeedanceAssetPrepareTask(ctx, task, snap.Status)
+				return true, updateSeedanceAssetPrepareTask(ctx, ch, task, snap.Status)
 			}
 			ApplySeedanceAssetResult(ref, result)
 		case SeedanceProviderAssetStatusProcessing:
 			result, err := client.GetAsset(ctx, ref.AssetID)
 			if err != nil {
 				markSeedanceAssetPrepareFailed(task, prepare, "provider_asset_sync_error", err.Error(), now)
-				return true, updateSeedanceAssetPrepareTask(ctx, task, snap.Status)
+				return true, updateSeedanceAssetPrepareTask(ctx, ch, task, snap.Status)
 			}
 			ApplySeedanceAssetResult(ref, result)
 		}
@@ -562,7 +602,7 @@ func progressSeedanceAssetPrepare(ctx context.Context, adaptor TaskPollingAdapto
 				code = "provider_asset_failed"
 			}
 			markSeedanceAssetPrepareFailed(task, prepare, code, msg, now)
-			return true, updateSeedanceAssetPrepareTask(ctx, task, snap.Status)
+			return true, updateSeedanceAssetPrepareTask(ctx, ch, task, snap.Status)
 		}
 	}
 
@@ -578,17 +618,17 @@ func progressSeedanceAssetPrepare(ctx context.Context, adaptor TaskPollingAdapto
 		prepare.SyncedAt = now
 		task.Status = model.TaskStatusInProgress
 		task.Progress = "15%"
-		return true, updateSeedanceAssetPrepareTask(ctx, task, snap.Status)
+		return true, updateSeedanceAssetPrepareTask(ctx, ch, task, snap.Status)
 	}
 
 	submitter, ok := adaptor.(SeedancePreparedSubmitter)
 	if !ok {
 		markSeedanceAssetPrepareFailed(task, prepare, "provider_asset_submitter_missing", "当前 Seedance 通道不支持可信素材提交", now)
-		return true, updateSeedanceAssetPrepareTask(ctx, task, snap.Status)
+		return true, updateSeedanceAssetPrepareTask(ctx, ch, task, snap.Status)
 	}
 	if prepare.Request == nil {
 		markSeedanceAssetPrepareFailed(task, prepare, "provider_asset_request_missing", "内部请求快照缺失，无法提交 Seedance", now)
-		return true, updateSeedanceAssetPrepareTask(ctx, task, snap.Status)
+		return true, updateSeedanceAssetPrepareTask(ctx, ch, task, snap.Status)
 	}
 
 	req := rewriteSeedanceRequestWithAssets(*prepare.Request, prepare.References)
@@ -598,7 +638,7 @@ func progressSeedanceAssetPrepare(ctx context.Context, adaptor TaskPollingAdapto
 		if len(body) > 0 {
 			task.Data = redactVideoResponseBody(body)
 		}
-		return true, updateSeedanceAssetPrepareTask(ctx, task, snap.Status)
+		return true, updateSeedanceAssetPrepareTask(ctx, ch, task, snap.Status)
 	}
 	prepare.Stage = model.SeedanceAssetPrepareStageSubmitted
 	prepare.SubmittedAt = now
@@ -606,7 +646,7 @@ func progressSeedanceAssetPrepare(ctx context.Context, adaptor TaskPollingAdapto
 	task.Status = model.TaskStatusSubmitted
 	task.Progress = taskcommon.ProgressSubmitted
 	task.Data = redactVideoResponseBody(body)
-	return true, updateSeedanceAssetPrepareTask(ctx, task, snap.Status)
+	return true, updateSeedanceAssetPrepareTask(ctx, ch, task, snap.Status)
 }
 
 func rewriteSeedanceRequestWithAssets(req relaycommon.TaskSubmitReq, refs []model.SeedanceAssetReference) relaycommon.TaskSubmitReq {
@@ -678,7 +718,7 @@ func markSeedanceAssetPrepareFailed(task *model.Task, prepare *model.SeedanceAss
 	}
 }
 
-func updateSeedanceAssetPrepareTask(ctx context.Context, task *model.Task, fromStatus model.TaskStatus) error {
+func updateSeedanceAssetPrepareTask(ctx context.Context, ch *model.Channel, task *model.Task, fromStatus model.TaskStatus) error {
 	isDone := task.Status == model.TaskStatusFailure
 	if isDone && fromStatus != task.Status {
 		won, err := task.UpdateWithStatus(fromStatus)
@@ -687,6 +727,9 @@ func updateSeedanceAssetPrepareTask(ctx context.Context, task *model.Task, fromS
 		}
 		if won && task.Quota != 0 {
 			RefundTaskQuota(ctx, task, task.FailReason)
+		}
+		if won {
+			cleanupSeedanceAssetsAfterTaskDone(ctx, ch, task)
 		}
 		return nil
 	}

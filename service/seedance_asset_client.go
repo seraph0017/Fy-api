@@ -29,6 +29,7 @@ const (
 type SeedanceAssetClient interface {
 	CreateAsset(ctx context.Context, sourceURL string) (*SeedanceAssetResult, error)
 	GetAsset(ctx context.Context, assetID string) (*SeedanceAssetResult, error)
+	DeleteAsset(ctx context.Context, assetID string) error
 }
 
 type SeedanceAssetResult struct {
@@ -96,6 +97,10 @@ func (DisabledSeedanceAssetClient) GetAsset(ctx context.Context, assetID string)
 	return seedanceAssetFailed("provider_asset_not_configured", "当前渠道未配置 Seedance Ark Asset Service 凭证，无法查询可信素材"), nil
 }
 
+func (DisabledSeedanceAssetClient) DeleteAsset(ctx context.Context, assetID string) error {
+	return fmt.Errorf("当前渠道未配置 Seedance Ark Asset Service 凭证，无法删除可信素材")
+}
+
 func (c *VolcSeedanceAssetClient) CreateAsset(ctx context.Context, sourceURL string) (*SeedanceAssetResult, error) {
 	if c.initErr != nil {
 		return nil, c.initErr
@@ -117,6 +122,21 @@ func (c *VolcSeedanceAssetClient) CreateAsset(ctx context.Context, sourceURL str
 		return nil, err
 	}
 	return seedanceAssetPayloadFromMap(output).result(), nil
+}
+
+func (c *VolcSeedanceAssetClient) DeleteAsset(ctx context.Context, assetID string) error {
+	if c.initErr != nil {
+		return c.initErr
+	}
+	if strings.TrimSpace(assetID) == "" {
+		return fmt.Errorf("可信素材 ID 为空，无法删除")
+	}
+	input := map[string]interface{}{
+		"Id":          strings.TrimSpace(assetID),
+		"ProjectName": c.projectName,
+	}
+	_, err := c.universal.DoCall(seedanceAssetUniversalRequest("DeleteAsset"), &input)
+	return err
 }
 
 func (c *VolcSeedanceAssetClient) GetAsset(ctx context.Context, assetID string) (*SeedanceAssetResult, error) {

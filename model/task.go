@@ -132,14 +132,17 @@ type SeedanceAssetPrepareData struct {
 }
 
 type SeedanceAssetReference struct {
-	Ordinal      int    `json:"ordinal"`
-	SourceURL    string `json:"source_url,omitempty"`
-	AssetID      string `json:"asset_id,omitempty"`
-	URI          string `json:"uri,omitempty"`
-	Status       string `json:"status,omitempty"`
-	ErrorCode    string `json:"error_code,omitempty"`
-	ErrorMessage string `json:"error_message,omitempty"`
-	SyncedAt     int64  `json:"synced_at,omitempty"`
+	Ordinal       int    `json:"ordinal"`
+	SourceURL     string `json:"source_url,omitempty"`
+	AssetID       string `json:"asset_id,omitempty"`
+	URI           string `json:"uri,omitempty"`
+	Status        string `json:"status,omitempty"`
+	ErrorCode     string `json:"error_code,omitempty"`
+	ErrorMessage  string `json:"error_message,omitempty"`
+	SyncedAt      int64  `json:"synced_at,omitempty"`
+	CleanupStatus string `json:"cleanup_status,omitempty"`
+	CleanupAt     int64  `json:"cleanup_at,omitempty"`
+	CleanupError  string `json:"cleanup_error,omitempty"`
 }
 
 // TaskBillingContext 记录任务提交时的计费参数，以便轮询阶段可以重新计算额度。

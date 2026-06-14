@@ -3,16 +3,52 @@ package service
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+const testVideoPipelineConfig = `
+version: 1
+defaults:
+  enabled: true
+strategies:
+  - name: seedance2_720p_mediakit_1080p
+    enabled: true
+    lifecycle:
+      match:
+        relay_mode: video_submit
+        models:
+          - doubao-seedance-2-0-260128
+          - doubao-seedance-2-0-fast-260128
+        requested_resolutions:
+          - 1080p
+      rollout:
+        traffic_percent: 100
+        request_override_metadata:
+          force_keys:
+            - fy_enhance_force
+          bypass_keys:
+            - fy_enhance_bypass
+`
+
+func useVideoPipelineConfig(t *testing.T, body string) {
+	t.Helper()
+	resetVideoPipelineConfigForTest()
+	t.Cleanup(resetVideoPipelineConfigForTest)
+	path := filepath.Join(t.TempDir(), "video-pipeline.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
+	require.NoError(t, LoadVideoPipelineConfigFromFile(path))
+}
 
 func TestAnalyzeVideoRequest_StaticPromptAndReferences(t *testing.T) {
 	req := relaycommon.TaskSubmitReq{
@@ -72,8 +108,7 @@ func TestAnalyzeVideoRequest_CountsReferenceContentWithoutDoubleCountingImage(t 
 }
 
 func TestBuildVideoPipelinePlan_KeepsSeedance2ForStoryboardRequests(t *testing.T) {
-	t.Setenv("SEEDANCE_PIPELINE_ENABLED", "true")
-	t.Setenv("SEEDANCE_PIPELINE_TRAFFIC_PERCENT", "100")
+	useVideoPipelineConfig(t, testVideoPipelineConfig)
 
 	req := relaycommon.TaskSubmitReq{
 		Model:  "doubao-seedance-2-0-260128",
@@ -84,7 +119,7 @@ func TestBuildVideoPipelinePlan_KeepsSeedance2ForStoryboardRequests(t *testing.T
 			"shot_count": 2,
 		},
 	}
-	info := &relaycommon.RelayInfo{UserId: 7, TokenId: 9, OriginModelName: req.Model}
+	info := &relaycommon.RelayInfo{UserId: 7, TokenId: 9, OriginModelName: req.Model, RelayMode: relayconstant.RelayModeVideoSubmit}
 
 	plan, err := BuildVideoPipelinePlan(nil, info, req)
 	require.NoError(t, err)
@@ -96,9 +131,41 @@ func TestBuildVideoPipelinePlan_KeepsSeedance2ForStoryboardRequests(t *testing.T
 	assert.Equal(t, "1080p", plan.Enhance.Resolution)
 }
 
+func TestBuildVideoPipelinePlan_DefaultConfigDisablesStrategies(t *testing.T) {
+	resetVideoPipelineConfigForTest()
+	t.Cleanup(resetVideoPipelineConfigForTest)
+
+	req := relaycommon.TaskSubmitReq{
+		Model:  "doubao-seedance-2-0-260128",
+		Prompt: "固定镜头的产品展示",
+		Size:   "1920x1080",
+	}
+	info := &relaycommon.RelayInfo{OriginModelName: req.Model, RelayMode: relayconstant.RelayModeVideoSubmit}
+
+	plan, err := BuildVideoPipelinePlan(nil, info, req)
+	require.NoError(t, err)
+	assert.Nil(t, plan)
+}
+
 func TestBuildVideoPipelinePlan_IgnoresRequestForceUnlessAllowed(t *testing.T) {
-	t.Setenv("SEEDANCE_PIPELINE_ENABLED", "false")
-	t.Setenv("SEEDANCE_PIPELINE_ALLOW_REQUEST_OVERRIDE", "false")
+	useVideoPipelineConfig(t, `
+version: 1
+defaults:
+  enabled: true
+strategies:
+  - name: seedance2_720p_mediakit_1080p
+    enabled: true
+    lifecycle:
+      match:
+        relay_mode: video_submit
+        models:
+          - doubao-seedance-2-0-260128
+        requested_resolutions:
+          - 1080p
+      rollout:
+        traffic_percent: 0
+        request_override_metadata: {}
+`)
 
 	req := relaycommon.TaskSubmitReq{
 		Model:  "doubao-seedance-2-0-260128",
@@ -109,9 +176,78 @@ func TestBuildVideoPipelinePlan_IgnoresRequestForceUnlessAllowed(t *testing.T) {
 		},
 	}
 
-	plan, err := BuildVideoPipelinePlan(nil, &relaycommon.RelayInfo{OriginModelName: req.Model}, req)
+	plan, err := BuildVideoPipelinePlan(nil, &relaycommon.RelayInfo{OriginModelName: req.Model, RelayMode: relayconstant.RelayModeVideoSubmit}, req)
 	require.NoError(t, err)
 	assert.Nil(t, plan)
+}
+
+func TestBuildVideoPipelinePlan_UsesRuntimeConfigMatchAndOverrides(t *testing.T) {
+	useVideoPipelineConfig(t, `
+version: 1
+defaults:
+  enabled: true
+strategies:
+  - name: seedance2_720p_mediakit_1080p
+    enabled: true
+    lifecycle:
+      match:
+        relay_mode: video_submit
+        models:
+          - doubao-seedance-2-0-260128
+        requested_resolutions:
+          - 1080p
+      rollout:
+        traffic_percent: 0
+        request_override_metadata:
+          force_keys:
+            - fy_enhance_force
+          bypass_keys:
+            - fy_enhance_bypass
+`)
+
+	req := relaycommon.TaskSubmitReq{
+		Model:  "doubao-seedance-2-0-260128",
+		Prompt: "固定镜头的产品展示",
+		Size:   "1920x1080",
+		Metadata: map[string]interface{}{
+			"fy_enhance_force": true,
+		},
+	}
+	info := &relaycommon.RelayInfo{OriginModelName: req.Model, RelayMode: relayconstant.RelayModeVideoSubmit, RequestId: "req-force"}
+
+	plan, err := BuildVideoPipelinePlan(nil, info, req)
+	require.NoError(t, err)
+	require.NotNil(t, plan)
+	assert.Equal(t, "seedance2_720p_mediakit_1080p", plan.StrategyName)
+	assert.Equal(t, "720p", plan.Generation.Resolution)
+
+	req.Metadata["fy_enhance_bypass"] = true
+	plan, err = BuildVideoPipelinePlan(nil, info, req)
+	require.NoError(t, err)
+	assert.Nil(t, plan)
+}
+
+func TestLoadVideoPipelineConfigFromFileRejectsInvalidTrafficPercent(t *testing.T) {
+	resetVideoPipelineConfigForTest()
+	t.Cleanup(resetVideoPipelineConfigForTest)
+	path := filepath.Join(t.TempDir(), "video-pipeline.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(`
+version: 1
+defaults:
+  enabled: true
+strategies:
+  - name: seedance2_720p_mediakit_1080p
+    enabled: true
+    lifecycle:
+      match:
+        relay_mode: video_submit
+      rollout:
+        traffic_percent: 101
+`), 0o600))
+
+	err := LoadVideoPipelineConfigFromFile(path)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "traffic_percent")
 }
 
 func TestApplyVideoPipelineSubmitSnapshotFallsBackToRelayInfoPlan(t *testing.T) {
@@ -196,8 +332,7 @@ func TestApplyVideoPipelineSubmitSnapshotSeparatesUserBillingFromProviderCost(t 
 
 func TestApplyVideoPipelineSubmitSnapshotRebuildsPlanFromRequest(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	t.Setenv("SEEDANCE_PIPELINE_ENABLED", "true")
-	t.Setenv("SEEDANCE_PIPELINE_TRAFFIC_PERCENT", "100")
+	useVideoPipelineConfig(t, testVideoPipelineConfig)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -208,7 +343,7 @@ func TestApplyVideoPipelineSubmitSnapshotRebuildsPlanFromRequest(t *testing.T) {
 		Seconds: "5",
 		Size:    "1920x1080",
 	})
-	info := &relaycommon.RelayInfo{OriginModelName: "doubao-seedance-2-0-260128", TaskRelayInfo: &relaycommon.TaskRelayInfo{}}
+	info := &relaycommon.RelayInfo{OriginModelName: "doubao-seedance-2-0-260128", RelayMode: relayconstant.RelayModeVideoSubmit, TaskRelayInfo: &relaycommon.TaskRelayInfo{}}
 	task := &model.Task{Quota: 123, PrivateData: model.TaskPrivateData{UpstreamTaskID: "generation-2"}}
 
 	ApplyVideoPipelineSubmitSnapshot(c, task, info)

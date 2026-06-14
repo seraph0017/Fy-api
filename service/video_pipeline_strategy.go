@@ -2,13 +2,13 @@ package service
 
 import (
 	"hash/fnv"
-	"os"
 	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 
 	"github.com/gin-gonic/gin"
 )
@@ -16,7 +16,7 @@ import (
 const (
 	videoPipelineContextKey = "fy_video_pipeline_plan"
 
-	VideoPipelineNameSeedanceEnhance       = "seedance_720_to_1080_enhance"
+	VideoPipelineNameSeedanceEnhance       = "seedance2_720p_mediakit_1080p"
 	VideoPipelineStatusGenerationSubmitted = "generation_submitted"
 
 	VideoPipelineFallbackReturnGeneration = "return_generation_result"
@@ -95,25 +95,22 @@ func BuildVideoPipelinePlan(c *gin.Context, info *relaycommon.RelayInfo, req rel
 	if err != nil {
 		return nil, err
 	}
-	if !isSeedancePipelineCandidate(info, req, analysis) {
+	strategy, ok := matchVideoPipelineStrategy(info, req, analysis)
+	if !ok {
 		return nil, nil
 	}
-	allowRequestOverride := requestStrategyOverrideAllowed()
-	if allowRequestOverride && metadataBool(req.Metadata, "fy_enhance_bypass") {
+	if metadataAnyBool(req.Metadata, strategy.Lifecycle.Rollout.RequestOverrideMetadata.BypassKeys) {
 		return nil, nil
 	}
-	force := allowRequestOverride && metadataBool(req.Metadata, "fy_enhance_force")
-	if !force && !seedancePipelineEnabled() {
-		return nil, nil
-	}
-	if !force && !rolloutMatched(info, analysis) {
+	force := metadataAnyBool(req.Metadata, strategy.Lifecycle.Rollout.RequestOverrideMetadata.ForceKeys)
+	if !force && !rolloutMatched(info, analysis, strategy.Lifecycle.Rollout.TrafficPercent) {
 		return nil, nil
 	}
 
 	gen := selectGenerationPolicy(info, req, analysis)
 	enhance := selectEnhancePolicy(analysis, gen.Generation)
 	plan := &VideoPipelinePlan{
-		StrategyName:        VideoPipelineNameSeedanceEnhance,
+		StrategyName:        strategy.Name,
 		StrategyVersion:     "v1",
 		Analysis:            analysis,
 		UserRequestedModel:  req.Model,
@@ -156,7 +153,7 @@ func ApplyVideoPipelineSubmitSnapshot(c *gin.Context, task *model.Task, info *re
 		return
 	}
 	p := &model.SeedanceEnhancePipeline{
-		Pipeline:                VideoPipelineNameSeedanceEnhance,
+		Pipeline:                plan.StrategyName,
 		Status:                  VideoPipelineStatusGenerationSubmitted,
 		RequestedResolution:     plan.RequestedResolution,
 		GenerationResolution:    plan.Generation.Resolution,
@@ -212,36 +209,56 @@ func estimateVideoPipelineGenerationCostQuota(task *model.Task, info *relaycommo
 	return task.Quota
 }
 
-func isSeedancePipelineCandidate(info *relaycommon.RelayInfo, req relaycommon.TaskSubmitReq, analysis model.VideoRequestAnalysis) bool {
+func matchVideoPipelineStrategy(info *relaycommon.RelayInfo, req relaycommon.TaskSubmitReq, analysis model.VideoRequestAnalysis) (VideoPipelineStrategyConfig, bool) {
+	cfg := GetVideoPipelineConfig()
+	if cfg == nil || !cfg.Defaults.Enabled {
+		return VideoPipelineStrategyConfig{}, false
+	}
+	for _, strategy := range cfg.Strategies {
+		if !strategy.Enabled {
+			continue
+		}
+		if !isSeedancePipelineStrategyName(strategy.Name) {
+			continue
+		}
+		if !relayModeMatchesStrategy(info, strategy.Lifecycle.Match.RelayMode) {
+			continue
+		}
+		if !isSeedancePipelineCandidate(info, req, analysis, strategy) {
+			continue
+		}
+		return strategy, true
+	}
+	return VideoPipelineStrategyConfig{}, false
+}
+
+func isSeedancePipelineCandidate(info *relaycommon.RelayInfo, req relaycommon.TaskSubmitReq, analysis model.VideoRequestAnalysis, strategy VideoPipelineStrategyConfig) bool {
 	modelName := req.Model
 	if modelName == "" && info != nil {
 		modelName = info.OriginModelName
 	}
-	if !isSeedance2Model(modelName) {
+	if !containsString(strategy.Lifecycle.Match.Models, modelName) {
 		return false
 	}
-	return analysis.RequestedResolution == "1080p"
+	return containsString(strategy.Lifecycle.Match.RequestedResolutions, analysis.RequestedResolution)
 }
 
-func isSeedance2Model(modelName string) bool {
-	return modelName == "doubao-seedance-2-0-260128" || modelName == "doubao-seedance-2-0-fast-260128"
+func isSeedancePipelineStrategyName(name string) bool {
+	return name == VideoPipelineNameSeedanceEnhance
 }
 
-func seedancePipelineEnabled() bool {
-	return strings.EqualFold(os.Getenv("SEEDANCE_PIPELINE_ENABLED"), "true")
-}
-
-func requestStrategyOverrideAllowed() bool {
-	return strings.EqualFold(os.Getenv("SEEDANCE_PIPELINE_ALLOW_REQUEST_OVERRIDE"), "true")
-}
-
-func rolloutMatched(info *relaycommon.RelayInfo, analysis model.VideoRequestAnalysis) bool {
-	percent := 0
-	if v := strings.TrimSpace(os.Getenv("SEEDANCE_PIPELINE_TRAFFIC_PERCENT")); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
-			percent = n
-		}
+func relayModeMatchesStrategy(info *relaycommon.RelayInfo, relayModeName string) bool {
+	expected, ok := videoPipelineRelayModeFromName(relayModeName)
+	if !ok || expected == relayconstant.RelayModeUnknown {
+		return ok
 	}
+	if info == nil {
+		return false
+	}
+	return info.RelayMode == expected
+}
+
+func rolloutMatched(info *relaycommon.RelayInfo, analysis model.VideoRequestAnalysis, percent int) bool {
 	if percent <= 0 {
 		return false
 	}
@@ -250,9 +267,34 @@ func rolloutMatched(info *relaycommon.RelayInfo, analysis model.VideoRequestAnal
 	}
 	key := analysis.RequestedResolution
 	if info != nil {
-		key = strconv.Itoa(info.UserId) + ":" + strconv.Itoa(info.TokenId) + ":" + info.OriginModelName + ":" + analysis.RequestedResolution
+		key = info.RequestId
+		if key == "" {
+			key = strconv.Itoa(info.UserId) + ":" + strconv.Itoa(info.TokenId) + ":" + info.OriginModelName + ":" + analysis.RequestedResolution
+		}
 	}
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(key))
 	return int(h.Sum32()%10000) < percent*100
+}
+
+func metadataAnyBool(metadata map[string]interface{}, keys []string) bool {
+	for _, key := range keys {
+		if metadataBool(metadata, key) {
+			return true
+		}
+	}
+	return false
+}
+
+func containsString(items []string, want string) bool {
+	want = strings.TrimSpace(want)
+	if want == "" {
+		return false
+	}
+	for _, item := range items {
+		if strings.EqualFold(strings.TrimSpace(item), want) {
+			return true
+		}
+	}
+	return false
 }

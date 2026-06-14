@@ -3,22 +3,60 @@ package doubao
 import (
 	"io"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
+const testVideoPipelineConfig = `
+version: 1
+defaults:
+  enabled: true
+strategies:
+  - name: seedance2_720p_mediakit_1080p
+    enabled: true
+    lifecycle:
+      match:
+        relay_mode: video_submit
+        models:
+          - doubao-seedance-2-0-260128
+          - doubao-seedance-2-0-fast-260128
+        requested_resolutions:
+          - 1080p
+      rollout:
+        traffic_percent: 100
+        request_override_metadata:
+          force_keys:
+            - fy_enhance_force
+          bypass_keys:
+            - fy_enhance_bypass
+`
+
+func useVideoPipelineConfig(t *testing.T) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "video-pipeline.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(testVideoPipelineConfig), 0o600))
+	require.NoError(t, service.LoadVideoPipelineConfigFromFile(path))
+	t.Cleanup(func() {
+		disabledPath := filepath.Join(t.TempDir(), "video-pipeline-disabled.yaml")
+		require.NoError(t, os.WriteFile(disabledPath, []byte("version: 1\ndefaults:\n  enabled: false\n"), 0o600))
+		require.NoError(t, service.LoadVideoPipelineConfigFromFile(disabledPath))
+	})
+}
+
 func TestBuildRequestBodyAppliesVideoPipelinePlan(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	t.Setenv("SEEDANCE_PIPELINE_ENABLED", "true")
-	t.Setenv("SEEDANCE_PIPELINE_TRAFFIC_PERCENT", "100")
+	useVideoPipelineConfig(t)
 
 	body := `{"model":"doubao-seedance-2-0-260128","prompt":"固定镜头的产品展示","seconds":"5","size":"1920x1080","metadata":{"fy_enhance_force":true}}`
 	req := httptest.NewRequest("POST", "/v1/videos", strings.NewReader(body))
@@ -29,6 +67,7 @@ func TestBuildRequestBodyAppliesVideoPipelinePlan(t *testing.T) {
 
 	info := &relaycommon.RelayInfo{
 		OriginModelName: "doubao-seedance-2-0-260128",
+		RelayMode:       relayconstant.RelayModeVideoSubmit,
 		ChannelMeta:     &relaycommon.ChannelMeta{},
 		TaskRelayInfo:   &relaycommon.TaskRelayInfo{},
 	}
@@ -52,8 +91,7 @@ func TestBuildRequestBodyAppliesVideoPipelinePlan(t *testing.T) {
 
 func TestBuildRequestBodyMapsReferenceMediaRoles(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	t.Setenv("SEEDANCE_PIPELINE_ENABLED", "true")
-	t.Setenv("SEEDANCE_PIPELINE_TRAFFIC_PERCENT", "100")
+	useVideoPipelineConfig(t)
 
 	body := `{
 		"model":"doubao-seedance-2-0-260128",
@@ -73,6 +111,7 @@ func TestBuildRequestBodyMapsReferenceMediaRoles(t *testing.T) {
 
 	info := &relaycommon.RelayInfo{
 		OriginModelName: "doubao-seedance-2-0-260128",
+		RelayMode:       relayconstant.RelayModeVideoSubmit,
 		ChannelMeta:     &relaycommon.ChannelMeta{},
 		TaskRelayInfo:   &relaycommon.TaskRelayInfo{},
 	}
