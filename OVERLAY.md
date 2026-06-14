@@ -429,6 +429,7 @@
   - `relay/channel/task/doubao/seedance_asset_prepare.go` / `_test.go`（识别 Seedance 2.0 图片参考、保存请求快照、`asset://...` 改写、prepared submit）
   - `docs/seedance-real-person-video-support-plan.md`
   - `scripts/ops/seedance_gateway_vs_volcengine.py`
+  - `scripts/ops/seedance_e2e_matrix.py`（Seedance 2.0 `/v1/videos` 端到端矩阵脚本，默认覆盖命中 pipeline 与直连不命中两类 1080p 请求下的横屏无参考图、竖屏无参考图、单图、多图、故事板/metadata content 请求；下载视频后用 `ffprobe` 校验分辨率/时长，并可通过测试环境 SSH 查询 `tasks.private_data` 断言 pipeline 状态、真实上游 task id 和素材清理状态）
 - **修改文件**：
   - `dto/channel_settings.go`（`ChannelOtherSettings` 新增 `seedance_asset_*` 渠道级配置字段）
   - `model/task.go`（`TaskPrivateData.SeedanceAssetPrepare` 保存素材准备状态、原始请求快照和最终态素材清理状态）

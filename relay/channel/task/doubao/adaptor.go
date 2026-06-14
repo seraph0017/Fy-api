@@ -351,6 +351,21 @@ func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq) (*
 	if err := taskcommon.UnmarshalMetadata(metadata, &r); err != nil {
 		return nil, errors.Wrap(err, "unmarshal metadata failed")
 	}
+	// Fy-api overlay: OpenAI-like video requests express the requested output
+	// shape as size, while Seedance expects resolution + ratio. Apply that
+	// mapping for all paths, including direct generation and asset-prepared
+	// submissions, so reference-image requests do not silently inherit the
+	// source image aspect ratio.
+	if r.Resolution == "" || r.Ratio == "" {
+		if analysis, err := service.AnalyzeVideoRequest(*req); err == nil {
+			if r.Resolution == "" {
+				r.Resolution = analysis.RequestedResolution
+			}
+			if r.Ratio == "" {
+				r.Ratio = analysis.Ratio
+			}
+		}
+	}
 	normalizeReferenceContentRoles(r.Content)
 
 	if sec, _ := strconv.Atoi(req.Seconds); sec > 0 {

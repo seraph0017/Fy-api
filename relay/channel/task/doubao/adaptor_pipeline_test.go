@@ -141,6 +141,45 @@ func TestBuildRequestBodyMapsReferenceMediaRoles(t *testing.T) {
 	assert.Equal(t, "text", payload.Content[3].Type)
 }
 
+func TestBuildRequestBodyMapsSizeToSeedanceResolutionAndRatioWhenPipelineBypassed(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	useVideoPipelineConfig(t)
+
+	body := `{
+		"model":"doubao-seedance-2-0-260128",
+		"prompt":"参考图横屏视频",
+		"seconds":"5",
+		"size":"1920x1080",
+		"input_reference":"https://example.com/square.png",
+		"metadata":{"fy_enhance_bypass":true}
+	}`
+	req := httptest.NewRequest("POST", "/v1/videos", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "doubao-seedance-2-0-260128",
+		RelayMode:       relayconstant.RelayModeVideoSubmit,
+		ChannelMeta:     &relaycommon.ChannelMeta{},
+		TaskRelayInfo:   &relaycommon.TaskRelayInfo{},
+	}
+	adaptor := &TaskAdaptor{}
+	taskErr := adaptor.ValidateRequestAndSetAction(c, info)
+	require.Nil(t, taskErr)
+
+	reader, err := adaptor.BuildRequestBody(c, info)
+	require.NoError(t, err)
+	raw, err := io.ReadAll(reader)
+	require.NoError(t, err)
+	var payload map[string]any
+	require.NoError(t, common.Unmarshal(raw, &payload))
+
+	assert.Equal(t, "1080p", payload["resolution"])
+	assert.Equal(t, "16:9", payload["ratio"])
+}
+
 func TestEstimateBillingChargesRequestedSeedance1080pTier(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
