@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -300,15 +301,48 @@ func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq) (*
 		Model:   req.Model,
 		Content: []ContentItem{},
 	}
+	seenContent := make(map[string]bool)
 
 	// Add images if present
+	if req.Image != "" {
+		appendContentItem(&r.Content, seenContent, ContentItem{
+			Type:     "image_url",
+			ImageURL: &MediaURL{URL: req.Image},
+			Role:     "reference_image",
+		})
+	}
 	if req.HasImage() {
 		for _, imgURL := range req.Images {
-			r.Content = append(r.Content, ContentItem{
+			appendContentItem(&r.Content, seenContent, ContentItem{
 				Type: "image_url",
 				ImageURL: &MediaURL{
 					URL: imgURL,
 				},
+				Role: "reference_image",
+			})
+		}
+	}
+	if req.InputReference != "" {
+		appendContentItem(&r.Content, seenContent, ContentItem{
+			Type:     "image_url",
+			ImageURL: &MediaURL{URL: req.InputReference},
+			Role:     "reference_image",
+		})
+	}
+	for _, media := range req.Media {
+		mediaType := strings.ToLower(strings.TrimSpace(media.Type))
+		switch mediaType {
+		case "image", "image_url":
+			appendContentItem(&r.Content, seenContent, ContentItem{
+				Type:     "image_url",
+				ImageURL: &MediaURL{URL: media.URL},
+				Role:     "reference_image",
+			})
+		case "video", "video_url":
+			appendContentItem(&r.Content, seenContent, ContentItem{
+				Type:     "video_url",
+				VideoURL: &MediaURL{URL: media.URL},
+				Role:     "reference_video",
 			})
 		}
 	}
@@ -317,6 +351,7 @@ func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq) (*
 	if err := taskcommon.UnmarshalMetadata(metadata, &r); err != nil {
 		return nil, errors.Wrap(err, "unmarshal metadata failed")
 	}
+	normalizeReferenceContentRoles(r.Content)
 
 	if sec, _ := strconv.Atoi(req.Seconds); sec > 0 {
 		r.Duration = lo.ToPtr(dto.IntValue(sec))
@@ -329,6 +364,47 @@ func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq) (*
 	})
 
 	return &r, nil
+}
+
+func appendContentItem(items *[]ContentItem, seen map[string]bool, item ContentItem) {
+	key := contentItemKey(item)
+	if key == "" || seen[key] {
+		return
+	}
+	seen[key] = true
+	*items = append(*items, item)
+}
+
+func contentItemKey(item ContentItem) string {
+	switch item.Type {
+	case "image_url":
+		if item.ImageURL != nil {
+			return "image:" + strings.TrimSpace(item.ImageURL.URL)
+		}
+	case "video_url":
+		if item.VideoURL != nil {
+			return "video:" + strings.TrimSpace(item.VideoURL.URL)
+		}
+	case "audio_url":
+		if item.AudioURL != nil {
+			return "audio:" + strings.TrimSpace(item.AudioURL.URL)
+		}
+	}
+	return ""
+}
+
+func normalizeReferenceContentRoles(items []ContentItem) {
+	for i := range items {
+		if items[i].Role != "" {
+			continue
+		}
+		switch items[i].Type {
+		case "image_url":
+			items[i].Role = "reference_image"
+		case "video_url":
+			items[i].Role = "reference_video"
+		}
+	}
 }
 
 func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, error) {

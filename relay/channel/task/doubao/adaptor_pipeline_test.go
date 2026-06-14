@@ -50,6 +50,58 @@ func TestBuildRequestBodyAppliesVideoPipelinePlan(t *testing.T) {
 	assert.Equal(t, "dynamic-default-seedance-2-720p", plan.MatchedGenerationPolicy)
 }
 
+func TestBuildRequestBodyMapsReferenceMediaRoles(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	t.Setenv("SEEDANCE_PIPELINE_ENABLED", "true")
+	t.Setenv("SEEDANCE_PIPELINE_TRAFFIC_PERCENT", "100")
+
+	body := `{
+		"model":"doubao-seedance-2-0-260128",
+		"prompt":"参考素材生成视频",
+		"seconds":"5",
+		"size":"1920x1080",
+		"image":"https://example.com/single.png",
+		"images":["https://example.com/second.png"],
+		"media":[{"type":"video","url":"https://example.com/motion.mp4"}],
+		"metadata":{"fy_enhance_force":true}
+	}`
+	req := httptest.NewRequest("POST", "/v1/videos", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "doubao-seedance-2-0-260128",
+		ChannelMeta:     &relaycommon.ChannelMeta{},
+		TaskRelayInfo:   &relaycommon.TaskRelayInfo{},
+	}
+	adaptor := &TaskAdaptor{}
+	taskErr := adaptor.ValidateRequestAndSetAction(c, info)
+	require.Nil(t, taskErr)
+
+	reader, err := adaptor.BuildRequestBody(c, info)
+	require.NoError(t, err)
+	raw, err := io.ReadAll(reader)
+	require.NoError(t, err)
+	var payload struct {
+		Content []ContentItem `json:"content"`
+	}
+	require.NoError(t, common.Unmarshal(raw, &payload))
+
+	require.Len(t, payload.Content, 4)
+	assert.Equal(t, "image_url", payload.Content[0].Type)
+	assert.Equal(t, "reference_image", payload.Content[0].Role)
+	assert.Equal(t, "https://example.com/single.png", payload.Content[0].ImageURL.URL)
+	assert.Equal(t, "image_url", payload.Content[1].Type)
+	assert.Equal(t, "reference_image", payload.Content[1].Role)
+	assert.Equal(t, "https://example.com/second.png", payload.Content[1].ImageURL.URL)
+	assert.Equal(t, "video_url", payload.Content[2].Type)
+	assert.Equal(t, "reference_video", payload.Content[2].Role)
+	assert.Equal(t, "https://example.com/motion.mp4", payload.Content[2].VideoURL.URL)
+	assert.Equal(t, "text", payload.Content[3].Type)
+}
+
 func TestEstimateBillingChargesRequestedSeedance1080pTier(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

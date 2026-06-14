@@ -92,23 +92,86 @@ func resolutionFromSize(size string) (string, string, bool) {
 
 func countReferences(req relaycommon.TaskSubmitReq) (int, bool) {
 	count := 0
-	if req.InputReference != "" {
+	seen := make(map[string]bool)
+	addRef := func(url string) {
+		url = strings.TrimSpace(url)
+		if url == "" || seen[url] {
+			return
+		}
+		seen[url] = true
 		count++
 	}
-	if req.Image != "" {
-		count++
+	addRef(req.InputReference)
+	addRef(req.Image)
+	for _, imageURL := range req.Images {
+		addRef(imageURL)
 	}
-	count += len(req.Images)
 	hasVideo := false
 	for _, item := range req.Media {
 		if strings.EqualFold(item.Type, "video") || strings.EqualFold(item.Type, "video_url") {
 			hasVideo = true
 		}
-		if item.URL != "" {
-			count++
+		addRef(item.URL)
+	}
+	contentRefs, contentHasVideo := countMetadataContentReferences(req.Metadata, seen)
+	count += contentRefs
+	hasVideo = hasVideo || contentHasVideo
+	return count, hasVideo
+}
+
+func countMetadataContentReferences(metadata map[string]interface{}, seen map[string]bool) (int, bool) {
+	if metadata == nil {
+		return 0, false
+	}
+	contentRaw, ok := metadata["content"]
+	if !ok {
+		return 0, false
+	}
+	contentSlice, ok := contentRaw.([]interface{})
+	if !ok {
+		return 0, false
+	}
+	count := 0
+	hasVideo := false
+	addRef := func(url string) {
+		url = strings.TrimSpace(url)
+		if url == "" || seen[url] {
+			return
+		}
+		seen[url] = true
+		count++
+	}
+	for _, item := range contentSlice {
+		itemMap, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		itemType := strings.ToLower(strings.TrimSpace(fmt.Sprint(itemMap["type"])))
+		if imageURL := mediaURLFromMetadataItem(itemMap, "image_url"); imageURL != "" || itemType == "image_url" {
+			addRef(imageURL)
+		}
+		if videoURL := mediaURLFromMetadataItem(itemMap, "video_url"); videoURL != "" || itemType == "video_url" {
+			hasVideo = true
+			addRef(videoURL)
 		}
 	}
 	return count, hasVideo
+}
+
+func mediaURLFromMetadataItem(item map[string]interface{}, key string) string {
+	raw, ok := item[key]
+	if !ok {
+		return ""
+	}
+	switch v := raw.(type) {
+	case string:
+		return v
+	case map[string]interface{}:
+		if url, ok := v["url"]; ok {
+			return strings.TrimSpace(fmt.Sprint(url))
+		}
+	}
+	return ""
 }
 
 func detectStoryboard(req relaycommon.TaskSubmitReq) (bool, int) {

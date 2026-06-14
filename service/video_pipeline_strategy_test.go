@@ -37,6 +37,40 @@ func TestAnalyzeVideoRequest_StaticPromptAndReferences(t *testing.T) {
 	assert.Equal(t, "static_or_low_motion", analysis.MotionClass)
 }
 
+func TestAnalyzeVideoRequest_CountsReferenceContentWithoutDoubleCountingImage(t *testing.T) {
+	req := relaycommon.TaskSubmitReq{
+		Model:  "doubao-seedance-2-0-260128",
+		Prompt: "参考素材生成视频",
+		Size:   "1920x1080",
+		Image:  "https://example.com/single.png",
+		Images: []string{"https://example.com/single.png"},
+		Metadata: map[string]interface{}{
+			"content": []interface{}{
+				map[string]interface{}{
+					"type": "image_url",
+					"role": "reference_image",
+					"image_url": map[string]interface{}{
+						"url": "https://example.com/style.png",
+					},
+				},
+				map[string]interface{}{
+					"type": "video_url",
+					"role": "reference_video",
+					"video_url": map[string]interface{}{
+						"url": "https://example.com/motion.mp4",
+					},
+				},
+			},
+		},
+	}
+
+	analysis, err := AnalyzeVideoRequest(req)
+	require.NoError(t, err)
+
+	assert.Equal(t, 3, analysis.ReferenceCount)
+	assert.True(t, analysis.HasVideoReference)
+}
+
 func TestBuildVideoPipelinePlan_KeepsSeedance2ForStoryboardRequests(t *testing.T) {
 	t.Setenv("SEEDANCE_PIPELINE_ENABLED", "true")
 	t.Setenv("SEEDANCE_PIPELINE_TRAFFIC_PERCENT", "100")
