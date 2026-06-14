@@ -1,0 +1,61 @@
+# Pipeline 策略配置样例。
+#
+# 运行时默认读取 config/video-pipeline.yaml；也可以通过
+# VIDEO_PIPELINE_CONFIG_PATH 指定其他路径。服务启动时会读取它，并通过
+# fsnotify 监听变更；保存后通常会在数秒内生效，无需重启服务。
+#
+# 设计原则：
+# - 以“策略”为中心。一条策略里直接写清楚：name、命中条件和灰度控制。
+# - 动态标识都作为 value，例如 name: seedance2_720p_mediakit_1080p。
+#   不把策略名、阶段名、模型名写成 YAML key。
+# - 当前只有 video domain 有实际 pipeline 逻辑。image / audio / text /
+#   embedding / rerank 只是未来可能扩展的方向，在生效前只写在注释里。
+# - 当前没有策略命中，或者策略被灰度拒绝时，固定回退原始直连生成路径。
+
+version: 1
+
+defaults:
+  # 所有 pipeline 策略的总开关。false 时即使单条策略 enabled=true，也不启用任何 pipeline。
+  enabled: true
+
+strategies:
+  # 对符合条件的 Seedance 2.0 1080p 请求，使用同一个 Seedance 2.0 模型
+  # 先生成 720p，再通过火山 MediaKit 增强到 1080p。用户侧仍按照请求的
+  # 1080p 产品档位计费；生成和增强成本只作为内部成本记录。
+  - name: seedance2_720p_mediakit_1080p
+    # 单条策略开关。false 时这条策略完全不参与匹配。
+    enabled: true
+
+    lifecycle:
+      # 策略匹配阶段。判断请求是否有资格进入这条 pipeline。
+      match:
+        # 入口匹配使用内部 relay_mode，而不是协议名或 URL 字符串。
+        # 当前 /v1/videos 和 /v1/video/generations 的 POST 请求都会在
+        # distributor 中归一化为 video_submit。
+        relay_mode: video_submit
+
+        # 只有用户请求 Seedance 2.0 且目标分辨率命中 requested_resolutions 时，
+        # 才进入策略候选。
+        models:
+          - doubao-seedance-2-0-260128
+          - doubao-seedance-2-0-fast-260128
+
+        # 当前该策略仅支持：
+        # - 1080p：用户请求 1080p 时，内部改走 720p + MediaKit。
+        # 后续如扩展多分辨率，直接追加到这个列表。
+        requested_resolutions:
+          - 1080p
+
+      # 灰度命中阶段。匹配成功后，按请求级随机抽样控制实际放量比例。
+      rollout:
+        # 策略总灰度百分比。
+        # 取值 0-100；50 表示匹配请求里约一半进入 pipeline，另一半走 direct_generation。
+        traffic_percent: 50
+
+        # 请求 metadata 覆盖开关。key 对应 metadata 中的布尔值；
+        # 任一 force_keys 命中 true 时强制进入策略，任一 bypass_keys 命中 true 时强制跳过。
+        request_override_metadata:
+          force_keys:
+            - fy_enhance_force
+          bypass_keys:
+            - fy_enhance_bypass

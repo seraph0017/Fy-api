@@ -1,6 +1,8 @@
 package service
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -66,6 +68,32 @@ func TestVolcSeedanceAssetClientCreateAssetRequiresChannelGroupID(t *testing.T) 
 	}
 	if result.ErrorCode != "provider_asset_group_missing" {
 		t.Fatalf("error code = %q, want provider_asset_group_missing", result.ErrorCode)
+	}
+}
+
+func TestVolcSeedanceAssetClientDeleteAsset(t *testing.T) {
+	var sawDelete bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("Action") == "DeleteAsset" {
+			sawDelete = true
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ResponseMetadata":{"Action":"DeleteAsset"},"Result":{}}`))
+	}))
+	defer srv.Close()
+
+	client := NewSeedanceAssetClientFromChannelSettings(dto.ChannelOtherSettings{
+		SeedanceAssetAccessKey:   "ak",
+		SeedanceAssetSecretKey:   "sk",
+		SeedanceAssetProjectName: "zjzx",
+		SeedanceAssetEndpoint:    srv.URL,
+	})
+	err := client.DeleteAsset(t.Context(), "asset-001")
+	if err != nil {
+		t.Fatalf("DeleteAsset() error = %v", err)
+	}
+	if !sawDelete {
+		t.Fatal("DeleteAsset action was not sent")
 	}
 }
 

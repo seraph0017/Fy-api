@@ -24,6 +24,16 @@ func TestTaskPrivateDataSeedanceEnhanceRoundTrip(t *testing.T) {
 				AnalysisConfidence: 0.8,
 			},
 		},
+		SeedanceAssetPrepare: &SeedanceAssetPrepareData{
+			References: []SeedanceAssetReference{
+				{
+					AssetID:       "asset-001",
+					URI:           "asset://asset-001",
+					CleanupStatus: "deleted",
+					CleanupAt:     123,
+				},
+			},
+		},
 	}
 	b, err := common.Marshal(in)
 	require.NoError(t, err)
@@ -32,4 +42,7 @@ func TestTaskPrivateDataSeedanceEnhanceRoundTrip(t *testing.T) {
 	require.NotNil(t, out.SeedanceEnhance)
 	assert.Equal(t, in.SeedanceEnhance.MatchedGenerationPolicy, out.SeedanceEnhance.MatchedGenerationPolicy)
 	assert.Equal(t, in.SeedanceEnhance.Analysis.MotionClass, out.SeedanceEnhance.Analysis.MotionClass)
+	require.NotNil(t, out.SeedanceAssetPrepare)
+	require.Len(t, out.SeedanceAssetPrepare.References, 1)
+	assert.Equal(t, "deleted", out.SeedanceAssetPrepare.References[0].CleanupStatus)
 }
