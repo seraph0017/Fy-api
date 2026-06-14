@@ -4215,6 +4215,18 @@
     "并确认自行承担部署": "confirm that I bear legal responsibility arising from deployment",
     "运营和收费行为产生的法律责任": "operation and charging behavior",
     "，": ", ",
-    "、": ", "
+    "、": ", ",
+    "Seedance 真人素材库": "Thu vien tai san nguoi that Seedance",
+    "用于 Seedance 2.0 真人参考图的 Ark Asset Service。普通生成继续使用上方渠道密钥。": "Ark Asset Service cho anh tham chieu nguoi that cua Seedance 2.0. Tao thong thuong van dung khoa kenh o tren.",
+    "素材库 Access Key": "Access Key thu vien tai san",
+    "素材库 Secret Key": "Secret Key thu vien tai san",
+    "请输入素材库 Secret Key": "Nhap Secret Key cua thu vien tai san",
+    "素材库 Group ID": "Group ID thu vien tai san",
+    "请输入火山素材库 Group ID": "Nhap Group ID thu vien tai san Volcengine",
+    "素材库 Project Name": "Project Name thu vien tai san",
+    "素材库 Region": "Region thu vien tai san",
+    "素材库超时秒数": "So giay timeout thu vien tai san",
+    "素材库 Endpoint": "Endpoint thu vien tai san",
+    "可选，留空使用火山默认 Endpoint": "Tuy chon. De trong de dung endpoint mac dinh cua Volcengine"
   }
 }

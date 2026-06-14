@@ -582,6 +582,10 @@ func RelayTask(c *gin.Context) {
 		service.LogTaskConsumption(c, relayInfo)
 
 		task := model.InitTask(result.Platform, relayInfo)
+		// Fy-api overlay: task submit may return staged private data for Seedance Ark asset preparation.
+		if result.PrivateData != nil {
+			task.PrivateData = *result.PrivateData
+		}
 		task.PrivateData.UpstreamTaskID = result.UpstreamTaskID
 		task.PrivateData.BillingSource = relayInfo.BillingSource
 		task.PrivateData.SubscriptionId = relayInfo.SubscriptionId
