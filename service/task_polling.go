@@ -411,6 +411,9 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	// through the upstream-compatible status switch below.
 	hydrateVideoPipelinePrivateData(task)
 	if handled, err := AdvanceVideoPipelineIfNeeded(ctx, task, taskResult, responseBody); handled {
+		if err == nil && (task.Status == model.TaskStatusSuccess || task.Status == model.TaskStatusFailure) {
+			cleanupSeedanceAssetsAfterTaskDone(ctx, ch, task)
+		}
 		return err
 	}
 
@@ -643,6 +646,9 @@ func progressSeedanceAssetPrepare(ctx context.Context, adaptor TaskPollingAdapto
 	prepare.Stage = model.SeedanceAssetPrepareStageSubmitted
 	prepare.SubmittedAt = now
 	task.PrivateData.UpstreamTaskID = upstreamID
+	if task.PrivateData.SeedanceEnhance != nil {
+		task.PrivateData.SeedanceEnhance.GenerationTaskID = upstreamID
+	}
 	task.Status = model.TaskStatusSubmitted
 	task.Progress = taskcommon.ProgressSubmitted
 	task.Data = redactVideoResponseBody(body)
