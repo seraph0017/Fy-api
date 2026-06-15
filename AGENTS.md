@@ -78,14 +78,15 @@ conda run -n fy-api-deploy fab status --target=sg
 conda run -n fy-api-deploy fab logs --target=sg --tail=200
 conda run -n fy-api-deploy fab deploy --target=sg --tag=sg-5d733d85
 
-conda run -n fy-api-deploy fab preflight --target=legacy
+conda run -n fy-api-deploy fab preflight --target=cn-test
 ```
 
 Known targets:
 
 - `cn`: Hangzhou production, `root@8.136.146.211:58422`, key `~/.ssh/tracenex_XN.pem`.
 - `sg`: Singapore production, `root@47.236.133.70:58422`, key `~/.ssh/AI_tracenex.pem`, public URL `https://api.aitracenex.com`, ACR namespace `ai_transnext`.
-- `legacy`: old source server, `root@8.222.175.17`, default SSH key/agent, contains `/root/TraceNex` and local MySQL source data.
+- `cn-test`: Chengdu test env, `root@8.156.88.148:58422`, default SSH key/agent, domains `*-test.tracenex.cn`.
+- `sg-test`: SG test env, `root@8.222.175.17`, default SSH key/agent.
 
 ### Upstream sync orientation
 
@@ -111,9 +112,9 @@ After the PR is created, leave the main worktree on its original branch. Do not 
 
 ### Migration context
 
-SG production was migrated from the legacy self-hosted MySQL on 2026-05-07.
+SG production was migrated from a legacy self-hosted MySQL (8.222.175.17) on 2026-05-07.
 
-- Source: `legacy` / `8.222.175.17`, databases `tracenex` and `tracenex_log.logs`.
+- Source: `8.222.175.17` (decommissioned), databases `tracenex` and `tracenex_log.logs`.
 - Target: SG RDS `transnext_db` used by `api.aitracenex.com`.
 - SG pre-migration backup: `/opt/fy-api/backup/transnext_db-before-legacy-migration-20260507-231343.sql.gz` on the SG server.
 - Legacy MySQL operational access is via `/etc/mysql/debian.cnf`; application DSNs are in `/root/TraceNex/.env`. Do not print database passwords.
