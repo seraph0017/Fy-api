@@ -31,6 +31,10 @@ type TaskPollingAdaptor interface {
 	AdjustBillingOnComplete(task *model.Task, taskResult *relaycommon.TaskInfo) int
 }
 
+type SeedancePreparedSubmitter interface {
+	SubmitPreparedTask(baseURL string, key string, proxy string, req relaycommon.TaskSubmitReq, upstreamModelName string) (string, []byte, error)
+}
+
 // GetTaskAdaptorFunc 由 main 包注入，用于获取指定平台的任务适配器。
 // 打破 service -> relay -> relay/channel -> service 的循环依赖。
 var GetTaskAdaptorFunc func(platform constant.TaskPlatform) TaskPollingAdaptor
@@ -359,6 +363,12 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	if privateData.Key != "" {
 		key = privateData.Key
 	}
+
+	// Fy-api overlay: drive Seedance 2.0 Ark asset preparation before polling the real upstream task.
+	if handled, err := progressSeedanceAssetPrepare(ctx, adaptor, ch, task, baseURL, key, proxy); handled {
+		return err
+	}
+
 	resp, err := adaptor.FetchTask(baseURL, key, map[string]any{
 		"task_id": task.GetUpstreamTaskID(),
 		"action":  task.Action,
@@ -395,6 +405,17 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	task.Data = redactVideoResponseBody(responseBody)
 
 	logger.LogDebug(ctx, "updateVideoSingleTask taskResult: %+v", taskResult)
+
+	// Fy-api overlay: TraceNex multi-stage video pipeline. Only tasks with
+	// private pipeline state are handled here; all normal video tasks continue
+	// through the upstream-compatible status switch below.
+	hydrateVideoPipelinePrivateData(task)
+	if handled, err := AdvanceVideoPipelineIfNeeded(ctx, task, taskResult, responseBody); handled {
+		if err == nil && (task.Status == model.TaskStatusSuccess || task.Status == model.TaskStatusFailure) {
+			cleanupSeedanceAssetsAfterTaskDone(ctx, ch, task)
+		}
+		return err
+	}
 
 	now := time.Now().Unix()
 	if taskResult.Status == "" {
@@ -497,7 +518,230 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	if shouldRefund {
 		RefundTaskQuota(ctx, task, task.FailReason)
 	}
+	if isDone {
+		cleanupSeedanceAssetsAfterTaskDone(ctx, ch, task)
+	}
 
+	return nil
+}
+
+func cleanupSeedanceAssetsAfterTaskDone(ctx context.Context, ch *model.Channel, task *model.Task) {
+	if ch == nil || task == nil || task.PrivateData.SeedanceAssetPrepare == nil {
+		return
+	}
+	prepare := task.PrivateData.SeedanceAssetPrepare
+	if len(prepare.References) == 0 {
+		return
+	}
+	client := NewSeedanceAssetClientFromChannelSettings(ch.GetOtherSettings())
+	now := time.Now().Unix()
+	changed := false
+	for i := range prepare.References {
+		ref := &prepare.References[i]
+		if ref.AssetID == "" || ref.CleanupStatus == "deleted" {
+			continue
+		}
+		if err := client.DeleteAsset(ctx, ref.AssetID); err != nil {
+			ref.CleanupStatus = "failed"
+			ref.CleanupError = err.Error()
+			ref.CleanupAt = now
+			changed = true
+			logger.LogWarn(ctx, fmt.Sprintf("Seedance asset cleanup failed task=%s asset=%s err=%s", task.TaskID, ref.AssetID, err.Error()))
+			continue
+		}
+		ref.CleanupStatus = "deleted"
+		ref.CleanupError = ""
+		ref.CleanupAt = now
+		changed = true
+	}
+	if !changed {
+		return
+	}
+	if _, err := task.UpdateWithStatus(task.Status); err != nil {
+		logger.LogWarn(ctx, fmt.Sprintf("Seedance asset cleanup status update failed task=%s err=%s", task.TaskID, err.Error()))
+	}
+}
+
+func progressSeedanceAssetPrepare(ctx context.Context, adaptor TaskPollingAdaptor, ch *model.Channel, task *model.Task, baseURL, key, proxy string) (bool, error) {
+	prepare := task.PrivateData.SeedanceAssetPrepare
+	if prepare == nil || prepare.Stage == "" || prepare.Stage == model.SeedanceAssetPrepareStageSubmitted {
+		return false, nil
+	}
+	snap := task.Snapshot()
+	now := time.Now().Unix()
+	if task.StartTime == 0 {
+		task.StartTime = now
+	}
+
+	client := NewSeedanceAssetClientFromChannelSettings(ch.GetOtherSettings())
+	for i := range prepare.References {
+		ref := &prepare.References[i]
+		switch ref.Status {
+		case "", SeedanceProviderAssetStatusCreating:
+			if prepare.RequestedAt == 0 {
+				prepare.RequestedAt = now
+			}
+			result, err := client.CreateAsset(ctx, ref.SourceURL)
+			if err != nil {
+				markSeedanceAssetPrepareFailed(task, prepare, "provider_asset_error", err.Error(), now)
+				return true, updateSeedanceAssetPrepareTask(ctx, ch, task, snap.Status)
+			}
+			ApplySeedanceAssetResult(ref, result)
+		case SeedanceProviderAssetStatusProcessing:
+			result, err := client.GetAsset(ctx, ref.AssetID)
+			if err != nil {
+				markSeedanceAssetPrepareFailed(task, prepare, "provider_asset_sync_error", err.Error(), now)
+				return true, updateSeedanceAssetPrepareTask(ctx, ch, task, snap.Status)
+			}
+			ApplySeedanceAssetResult(ref, result)
+		}
+		if ref.Status == SeedanceProviderAssetStatusFailed {
+			msg := ref.ErrorMessage
+			if msg == "" {
+				msg = "Seedance 可信素材审核失败"
+			}
+			code := ref.ErrorCode
+			if code == "" {
+				code = "provider_asset_failed"
+			}
+			markSeedanceAssetPrepareFailed(task, prepare, code, msg, now)
+			return true, updateSeedanceAssetPrepareTask(ctx, ch, task, snap.Status)
+		}
+	}
+
+	allActive := true
+	for _, ref := range prepare.References {
+		if ref.Status != SeedanceProviderAssetStatusActive || !UsableSeedanceAssetURI(ref.URI) {
+			allActive = false
+			break
+		}
+	}
+	if !allActive {
+		prepare.Stage = model.SeedanceAssetPrepareStageProcessing
+		prepare.SyncedAt = now
+		task.Status = model.TaskStatusInProgress
+		task.Progress = "15%"
+		return true, updateSeedanceAssetPrepareTask(ctx, ch, task, snap.Status)
+	}
+
+	submitter, ok := adaptor.(SeedancePreparedSubmitter)
+	if !ok {
+		markSeedanceAssetPrepareFailed(task, prepare, "provider_asset_submitter_missing", "当前 Seedance 通道不支持可信素材提交", now)
+		return true, updateSeedanceAssetPrepareTask(ctx, ch, task, snap.Status)
+	}
+	if prepare.Request == nil {
+		markSeedanceAssetPrepareFailed(task, prepare, "provider_asset_request_missing", "内部请求快照缺失，无法提交 Seedance", now)
+		return true, updateSeedanceAssetPrepareTask(ctx, ch, task, snap.Status)
+	}
+
+	req := rewriteSeedanceRequestWithAssets(*prepare.Request, prepare.References)
+	upstreamID, body, err := submitter.SubmitPreparedTask(baseURL, key, proxy, req, task.Properties.UpstreamModelName)
+	if err != nil {
+		markSeedanceAssetPrepareFailed(task, prepare, "seedance_submit_failed", err.Error(), now)
+		if len(body) > 0 {
+			task.Data = redactVideoResponseBody(body)
+		}
+		return true, updateSeedanceAssetPrepareTask(ctx, ch, task, snap.Status)
+	}
+	prepare.Stage = model.SeedanceAssetPrepareStageSubmitted
+	prepare.SubmittedAt = now
+	task.PrivateData.UpstreamTaskID = upstreamID
+	if task.PrivateData.SeedanceEnhance != nil {
+		task.PrivateData.SeedanceEnhance.GenerationTaskID = upstreamID
+	}
+	task.Status = model.TaskStatusSubmitted
+	task.Progress = taskcommon.ProgressSubmitted
+	task.Data = redactVideoResponseBody(body)
+	return true, updateSeedanceAssetPrepareTask(ctx, ch, task, snap.Status)
+}
+
+func rewriteSeedanceRequestWithAssets(req relaycommon.TaskSubmitReq, refs []model.SeedanceAssetReference) relaycommon.TaskSubmitReq {
+	replacements := map[string]string{}
+	for _, ref := range refs {
+		if ref.SourceURL != "" && UsableSeedanceAssetURI(ref.URI) {
+			replacements[strings.TrimSpace(ref.SourceURL)] = ref.URI
+		}
+	}
+	if len(replacements) == 0 {
+		return req
+	}
+	replace := func(url string) string {
+		if uri, ok := replacements[strings.TrimSpace(url)]; ok {
+			return uri
+		}
+		return url
+	}
+	for i := range req.Images {
+		req.Images[i] = replace(req.Images[i])
+	}
+	req.Image = replace(req.Image)
+	req.InputReference = replace(req.InputReference)
+	if req.Metadata != nil {
+		if rewritten, ok := rewriteSeedanceMetadataAssets(req.Metadata, replacements).(map[string]interface{}); ok {
+			req.Metadata = rewritten
+		}
+	}
+	return req
+}
+
+func rewriteSeedanceMetadataAssets(v any, replacements map[string]string) any {
+	switch x := v.(type) {
+	case map[string]interface{}:
+		out := make(map[string]interface{}, len(x))
+		for k, child := range x {
+			if k == "url" {
+				if s, ok := child.(string); ok {
+					if uri, found := replacements[strings.TrimSpace(s)]; found {
+						out[k] = uri
+						continue
+					}
+				}
+			}
+			out[k] = rewriteSeedanceMetadataAssets(child, replacements)
+		}
+		return out
+	case []interface{}:
+		out := make([]interface{}, len(x))
+		for i, child := range x {
+			out[i] = rewriteSeedanceMetadataAssets(child, replacements)
+		}
+		return out
+	default:
+		return v
+	}
+}
+
+func markSeedanceAssetPrepareFailed(task *model.Task, prepare *model.SeedanceAssetPrepareData, code, message string, now int64) {
+	prepare.Stage = model.SeedanceAssetPrepareStageFailed
+	prepare.ErrorCode = code
+	prepare.ErrorMessage = message
+	prepare.SyncedAt = now
+	task.Status = model.TaskStatusFailure
+	task.Progress = taskcommon.ProgressComplete
+	task.FailReason = message
+	if task.FinishTime == 0 {
+		task.FinishTime = now
+	}
+}
+
+func updateSeedanceAssetPrepareTask(ctx context.Context, ch *model.Channel, task *model.Task, fromStatus model.TaskStatus) error {
+	isDone := task.Status == model.TaskStatusFailure
+	if isDone && fromStatus != task.Status {
+		won, err := task.UpdateWithStatus(fromStatus)
+		if err != nil {
+			return err
+		}
+		if won && task.Quota != 0 {
+			RefundTaskQuota(ctx, task, task.FailReason)
+		}
+		if won {
+			cleanupSeedanceAssetsAfterTaskDone(ctx, ch, task)
+		}
+		return nil
+	}
+	if _, err := task.UpdateWithStatus(fromStatus); err != nil {
+		return err
+	}
 	return nil
 }
 

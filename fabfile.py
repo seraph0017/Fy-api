@@ -24,7 +24,8 @@ Common usage from the Fy-api repo root:
 Known targets:
     cn: ssh -i ~/.ssh/tracenex_XN.pem -p 58422 root@8.136.146.211
     sg: ssh -i ~/.ssh/AI_tracenex.pem -p 58422 root@47.236.133.70
-    legacy: ssh root@8.222.175.17
+    cn-test: ssh -p 58422 root@8.156.88.148
+    sg-test: ssh root@8.222.175.17
 
 Override with environment variables when needed:
     FYAPI_TARGET
@@ -71,20 +72,7 @@ TARGETS = {
         "repo": "fy-api",
         "repo_url": "https://github.com/seraph0017/Fy-api.git",
     },
-    "legacy": {
-        "host": "8.222.175.17",
-        "port": 22,
-        "user": "root",
-        "key": "",
-        "app_dir": "/opt/fy-api",
-        "src_dir": "/root/Fy-api",
-        "build_dir": "/tmp/fy-api-build",
-        "registry": "",
-        "namespace": "",
-        "repo": "fy-api",
-        "repo_url": "git@github.com:seraph0017/Fy-api.git",
-    },
-    "test": {
+    "cn-test": {
         "host": "8.156.88.148",
         "port": 58422,
         "user": "root",

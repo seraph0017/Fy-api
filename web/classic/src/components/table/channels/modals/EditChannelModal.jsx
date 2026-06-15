@@ -215,6 +215,13 @@ const EditChannelModal = (props) => {
     upstream_model_update_last_check_time: 0,
     upstream_model_update_last_detected_models: [],
     upstream_model_update_ignored_models: '',
+    seedance_asset_access_key: '',
+    seedance_asset_secret_key: '',
+    seedance_asset_group_id: '',
+    seedance_asset_project_name: '',
+    seedance_asset_region: 'cn-beijing',
+    seedance_asset_endpoint: '',
+    seedance_asset_timeout_seconds: 20,
   };
   const [batch, setBatch] = useState(false);
   const [multiToSingle, setMultiToSingle] = useState(false);
@@ -927,6 +934,20 @@ const EditChannelModal = (props) => {
           )
             ? parsedSettings.upstream_model_update_ignored_models.join(',')
             : '';
+          data.seedance_asset_access_key =
+            parsedSettings.seedance_asset_access_key || '';
+          data.seedance_asset_secret_key =
+            parsedSettings.seedance_asset_secret_key || '';
+          data.seedance_asset_group_id =
+            parsedSettings.seedance_asset_group_id || '';
+          data.seedance_asset_project_name =
+            parsedSettings.seedance_asset_project_name || '';
+          data.seedance_asset_region =
+            parsedSettings.seedance_asset_region || 'cn-beijing';
+          data.seedance_asset_endpoint =
+            parsedSettings.seedance_asset_endpoint || '';
+          data.seedance_asset_timeout_seconds =
+            Number(parsedSettings.seedance_asset_timeout_seconds) || 20;
         } catch (error) {
           console.error('解析其他设置失败:', error);
           data.azure_responses_version = '';
@@ -946,6 +967,13 @@ const EditChannelModal = (props) => {
           data.upstream_model_update_last_check_time = 0;
           data.upstream_model_update_last_detected_models = [];
           data.upstream_model_update_ignored_models = '';
+          data.seedance_asset_access_key = '';
+          data.seedance_asset_secret_key = '';
+          data.seedance_asset_group_id = '';
+          data.seedance_asset_project_name = '';
+          data.seedance_asset_region = 'cn-beijing';
+          data.seedance_asset_endpoint = '';
+          data.seedance_asset_timeout_seconds = 20;
         }
       } else {
         // 兼容历史数据：老渠道没有 settings 时，默认按 json 展示
@@ -964,6 +992,13 @@ const EditChannelModal = (props) => {
         data.upstream_model_update_last_check_time = 0;
         data.upstream_model_update_last_detected_models = [];
         data.upstream_model_update_ignored_models = '';
+        data.seedance_asset_access_key = '';
+        data.seedance_asset_secret_key = '';
+        data.seedance_asset_group_id = '';
+        data.seedance_asset_project_name = '';
+        data.seedance_asset_region = 'cn-beijing';
+        data.seedance_asset_endpoint = '';
+        data.seedance_asset_timeout_seconds = 20;
       }
 
       if (
@@ -1826,6 +1861,31 @@ const EditChannelModal = (props) => {
       settings.upstream_model_update_last_check_time = 0;
     }
 
+    if (localInputs.type === 45) {
+      settings.seedance_asset_access_key =
+        localInputs.seedance_asset_access_key || '';
+      settings.seedance_asset_secret_key =
+        localInputs.seedance_asset_secret_key || '';
+      settings.seedance_asset_group_id =
+        localInputs.seedance_asset_group_id || '';
+      settings.seedance_asset_project_name =
+        localInputs.seedance_asset_project_name || '';
+      settings.seedance_asset_region =
+        localInputs.seedance_asset_region || 'cn-beijing';
+      settings.seedance_asset_endpoint =
+        localInputs.seedance_asset_endpoint || '';
+      settings.seedance_asset_timeout_seconds =
+        Number(localInputs.seedance_asset_timeout_seconds) || 20;
+    } else {
+      delete settings.seedance_asset_access_key;
+      delete settings.seedance_asset_secret_key;
+      delete settings.seedance_asset_group_id;
+      delete settings.seedance_asset_project_name;
+      delete settings.seedance_asset_region;
+      delete settings.seedance_asset_endpoint;
+      delete settings.seedance_asset_timeout_seconds;
+    }
+
     localInputs.settings = JSON.stringify(settings);
 
     // 清理不需要发送到后端的字段
@@ -1853,6 +1913,13 @@ const EditChannelModal = (props) => {
     delete localInputs.upstream_model_update_last_check_time;
     delete localInputs.upstream_model_update_last_detected_models;
     delete localInputs.upstream_model_update_ignored_models;
+    delete localInputs.seedance_asset_access_key;
+    delete localInputs.seedance_asset_secret_key;
+    delete localInputs.seedance_asset_group_id;
+    delete localInputs.seedance_asset_project_name;
+    delete localInputs.seedance_asset_region;
+    delete localInputs.seedance_asset_endpoint;
+    delete localInputs.seedance_asset_timeout_seconds;
 
     let res;
     localInputs.auto_ban = localInputs.auto_ban ? 1 : 0;
@@ -2527,6 +2594,127 @@ const EditChannelModal = (props) => {
                   <Form.Switch field='pass_through_body_enabled' label={t('透传请求体')} checkedText={t('开')} uncheckedText={t('关')} onChange={(value) => handleChannelSettingsChange('pass_through_body_enabled', value)} extraText={t('启用请求体透传功能')} />
 
                   <Form.Input field='proxy' label={t('代理地址')} placeholder={t('例如: socks5://user:pass@host:port')} onChange={(value) => handleChannelSettingsChange('proxy', value)} showClear extraText={t('用于配置网络代理，支持 socks5 协议')} />
+
+                  {/* Fy-api overlay: Ark Asset Service settings for Seedance 2.0 trusted real-person references. */}
+                  {inputs.type === 45 && (
+                    <>
+                      <div className='mt-4 mb-2 text-sm font-medium text-gray-700'>
+                        {t('Seedance 真人素材库')}
+                      </div>
+                      <Banner
+                        type='info'
+                        closeIcon={null}
+                        className='mb-3 !rounded-lg'
+                        description={t('用于 Seedance 2.0 真人参考图的 Ark Asset Service。普通生成继续使用上方渠道密钥。')}
+                      />
+                      <Row gutter={12}>
+                        <Col span={12}>
+                          <Form.Input
+                            field='seedance_asset_access_key'
+                            label={t('素材库 Access Key')}
+                            placeholder='AKLT...'
+                            onChange={(value) =>
+                              handleChannelOtherSettingsChange(
+                                'seedance_asset_access_key',
+                                value,
+                              )
+                            }
+                            showClear
+                            autoComplete='new-password'
+                          />
+                        </Col>
+                        <Col span={12}>
+                          <Form.Input
+                            field='seedance_asset_secret_key'
+                            label={t('素材库 Secret Key')}
+                            placeholder={t('请输入素材库 Secret Key')}
+                            mode='password'
+                            onChange={(value) =>
+                              handleChannelOtherSettingsChange(
+                                'seedance_asset_secret_key',
+                                value,
+                              )
+                            }
+                            showClear
+                            autoComplete='new-password'
+                          />
+                        </Col>
+                      </Row>
+                      <Row gutter={12}>
+                        <Col span={12}>
+                          <Form.Input
+                            field='seedance_asset_group_id'
+                            label={t('素材库 Group ID')}
+                            placeholder={t('请输入火山素材库 Group ID')}
+                            onChange={(value) =>
+                              handleChannelOtherSettingsChange(
+                                'seedance_asset_group_id',
+                                value,
+                              )
+                            }
+                            showClear
+                          />
+                        </Col>
+                        <Col span={12}>
+                          <Form.Input
+                            field='seedance_asset_project_name'
+                            label={t('素材库 Project Name')}
+                            placeholder='default'
+                            onChange={(value) =>
+                              handleChannelOtherSettingsChange(
+                                'seedance_asset_project_name',
+                                value,
+                              )
+                            }
+                            showClear
+                          />
+                        </Col>
+                      </Row>
+                      <Row gutter={12}>
+                        <Col span={12}>
+                          <Form.Input
+                            field='seedance_asset_region'
+                            label={t('素材库 Region')}
+                            placeholder='cn-beijing'
+                            onChange={(value) =>
+                              handleChannelOtherSettingsChange(
+                                'seedance_asset_region',
+                                value,
+                              )
+                            }
+                            showClear
+                          />
+                        </Col>
+                        <Col span={12}>
+                          <Form.InputNumber
+                            field='seedance_asset_timeout_seconds'
+                            label={t('素材库超时秒数')}
+                            min={1}
+                            max={120}
+                            onNumberChange={(value) =>
+                              handleChannelOtherSettingsChange(
+                                'seedance_asset_timeout_seconds',
+                                value,
+                              )
+                            }
+                            style={{ width: '100%' }}
+                          />
+                        </Col>
+                      </Row>
+                      <Form.Input
+                        field='seedance_asset_endpoint'
+                        label={t('素材库 Endpoint')}
+                        placeholder={t('可选，留空使用火山默认 Endpoint')}
+                        onChange={(value) =>
+                          handleChannelOtherSettingsChange(
+                            'seedance_asset_endpoint',
+                            value,
+                          )
+                        }
+                        showClear
+                      />
+                    </>
+                  )}
 
                   <Form.TextArea field='system_prompt' label={t('系统提示词')} placeholder={t('输入系统提示词，用户的系统提示词将优先于此设置')} onChange={(value) => handleChannelSettingsChange('system_prompt', value)} autosize showClear extraText={t('用户优先：如果用户在请求中指定了系统提示词，将优先使用用户的设置')} />
                   <Form.Switch field='system_prompt_override' label={t('系统提示词拼接')} checkedText={t('开')} uncheckedText={t('关')} onChange={(value) => handleChannelSettingsChange('system_prompt_override', value)} extraText={t('如果用户请求中包含系统提示词，则使用此设置拼接到用户的系统提示词前面')} />

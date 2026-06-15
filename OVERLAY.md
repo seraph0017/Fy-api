@@ -70,7 +70,7 @@
 ### B-6 [deploy] Fabric 服务端构建发布自动化
 - **新增文件**：`fabfile.py`
 - **用途**：本地只执行 Fabric；远端 ECS 在 `/root/Fy-api` 拉取 Git ref，用 `git archive` 生成干净临时构建目录后 Podman 构建镜像、推送 ACR，再调用 `scripts/prod/06-deploy-blue-green.sh` 蓝绿发布；也支持新加坡新机 `bootstrap-system`
-- **默认连接**：`cn=root@8.136.146.211:58422`（`~/.ssh/tracenex_XN.pem`），`sg=root@47.236.133.70:58422`（`~/.ssh/AI_tracenex.pem`，ACR namespace `ai_transnext`），`legacy=root@8.222.175.17`（默认 SSH key/agent）；默认源码目录 `/root/Fy-api`；均可用 `FYAPI_*` 环境变量覆盖
+- **默认连接**：`cn=root@8.136.146.211:58422`（`~/.ssh/tracenex_XN.pem`），`sg=root@47.236.133.70:58422`（`~/.ssh/AI_tracenex.pem`，ACR namespace `ai_transnext`），`cn-test=root@8.156.88.148:58422`，`sg-test=root@8.222.175.17`；默认源码目录 `/root/Fy-api`；均可用 `FYAPI_*` 环境变量覆盖
 - **冲突风险**：极低（新增根目录运维入口，不改 upstream 业务代码）
 - **Merge 策略**：保留文件；若部署脚本参数变化，同步更新 `deploy` / `release` 任务
 
@@ -96,7 +96,9 @@
     - `fy_image_conformance/` —— 图片协议一致性 + 质量 + 安全（六阶段：探针→冒烟→API兼容→输出验证→Phase A/B 质量→安全）
     - `fy_image_canary/` —— 图片金丝雀真实性检测（5A vendor 对比 + 5B 指纹/跨渠道/能力边界）
     - `fy_score/` —— 统一评分器（五维度加权，文本/图片不同权重，产出 scorecard）
+    - `seedance_gateway_vs_volcengine.py` —— Seedance 2.0 网关 vs 火山直连对照脚本，用于排查上游内容安全和网关转换差异
     - `tests/` + `tests_quality/` + `tests_canary/` + `tests_image_canary/` —— 102 个 e2e 测试
+  - `docs/seedance-real-person-video-support-plan.md` —— 基于 DJLine 可信素材链路整理的 SD2.0 真人视频支持方案
 - **用途**：
   1. **烟测**（Go）—— 生产机上零依赖跑一遍所有渠道，看 TTFT / 存活 / usage 是否正常
   2. **压测**（fy-loadtest）—— 灰度上线前验证单渠道在 N 并发下的分位延迟
@@ -394,6 +396,52 @@
 - **背景**：SG 生产 momo 客户流量（channel #27 AWS Bedrock）5/21 出现 18 次 400 `cache_control.ephemeral.scope: Extra inputs are not permitted` 和 5 次 `text content blocks must be non-empty`。Bedrock schema 校验比 Anthropic 原生 API 更严格：(1) 不接受 `cache_control` 内的 `scope` 字段；(2) 不允许 `type:"text"` 且 `text:""` 的空块。
 - **行为**：请求发往 Bedrock 前，静默移除 system/messages 中所有 `cache_control.scope`，并过滤掉空 text content block。不改变请求语义——`cache_control.type` 保留，非空 text block 保留。
 - **冲突风险**：极低（独立新文件 + 两处各 +2 行，与 B-17 同一函数但不同行）
+
+### B-28 [video/pipeline] Seedance 1080p 同模型降分辨率 + 火山增强 pipeline
+- **新增文件**：
+  - `service/video_pipeline_strategy.go`
+  - `service/video_pipeline_analysis.go`
+  - `service/video_pipeline_policies.go`
+  - `service/video_pipeline_mappers.go`
+  - `service/video_pipeline_config.go`
+  - `service/seedance_enhance_pipeline.go`
+  - `service/volcengine_mediakit_client.go`
+  - `model/task_seedance_enhance.go`
+  - `config/video-pipeline.example.yaml`
+- **修改文件**：
+  - `main.go`（启动时读取 `config/video-pipeline.yaml` 或 `VIDEO_PIPELINE_CONFIG_PATH` 并用 fsnotify 监听热加载；配置缺失时默认不启用任何 pipeline）
+  - `model/task.go`（`TaskPrivateData` 新增 `SeedanceEnhance` 私有 pipeline snapshot）
+  - `controller/relay.go`（任务插入前写入 pipeline snapshot）
+  - `relay/common/relay_info.go`（`TaskRelayInfo` 暂存内部 pipeline plan，避免跨 submit 阶段只依赖 gin context）
+  - `relay/channel/task/doubao/adaptor.go`（提交前调用 strategy helper 改写 generation payload；按用户请求的 1080p 产品档计费；查询响应隐藏内部 pipeline metadata）
+  - `service/task_polling.go`（普通轮询路径前加 `AdvanceVideoPipelineIfNeeded` 薄 hook）
+- **新增测试**：
+  - `service/video_pipeline_strategy_test.go`
+  - `relay/channel/task/doubao/adaptor_pipeline_test.go`
+  - `model/task_seedance_enhance_test.go`
+- **行为**：pipeline 策略由 `config/video-pipeline.yaml` 驱动，配置结构为 `version/defaults/strategies/lifecycle.match/lifecycle.rollout`；保存后通过 fsnotify 热加载。配置文件缺失、解析失败、`defaults.enabled=false`、单策略 `enabled=false`、未命中 match 或灰度拒绝时，统一回退原始直连生成路径。用户仍按请求模型/1080p 产品价计费；内部仅将 Seedance 2.0 1080p 请求改为同一 Seedance 2.0 模型的 720p generation + 火山 MediaKit 1080p 标准增强，不再按 storyboard、静态 prompt、多参考图等请求特征切换到 1.5-pro 或其它 generation 模型。内部 generation/enhance task id、策略命中、字段映射/丢弃、供应商成本记录在 `PrivateData.SeedanceEnhance`，不直接返回用户。
+- **冲突风险**：中（`service/task_polling.go` 和 `relay/channel/task/doubao/adaptor.go` 是 upstream 活跃区域）
+- **Merge 策略**：主体逻辑保留在新增 service/model 文件中；upstream 合并时只重放 controller/adaptor/polling 的极薄 `// Fy-api overlay:` hook。不得把策略判断写进 controller 或把火山增强状态机写进 Doubao adaptor。
+
+### B-29 [relay/video] Seedance 2.0 真人参考图可信素材准备
+- **新增文件**：
+  - `service/seedance_asset_client.go` / `service/seedance_asset_client_test.go`（火山 Ark Asset Service `CreateAsset` / `GetAsset` / `DeleteAsset` 客户端，状态归一为 `creating/processing/active/failed`）
+  - `relay/channel/task/doubao/seedance_asset_prepare.go` / `_test.go`（识别 Seedance 2.0 图片参考、保存请求快照、`asset://...` 改写、prepared submit）
+  - `docs/seedance-real-person-video-support-plan.md`
+  - `scripts/ops/seedance_gateway_vs_volcengine.py`
+  - `scripts/ops/seedance_e2e_matrix.py`（Seedance 2.0 `/v1/videos` 端到端矩阵脚本，默认覆盖命中 pipeline 与直连不命中两类 1080p 请求下的横屏无参考图、竖屏无参考图、单图、多图、故事板/metadata content 请求；下载视频后用 `ffprobe` 校验分辨率/时长，并可通过测试环境 SSH 查询 `tasks.private_data` 断言 pipeline 状态、真实上游 task id 和素材清理状态）
+- **修改文件**：
+  - `dto/channel_settings.go`（`ChannelOtherSettings` 新增 `seedance_asset_*` 渠道级配置字段）
+  - `model/task.go`（`TaskPrivateData.SeedanceAssetPrepare` 保存素材准备状态、原始请求快照和最终态素材清理状态）
+  - `relay/relay_task.go`（`// Fy-api overlay:`：Seedance 2.0 + HTTP 图片参考命中时，提交阶段返回本地 task，不立即投递上游）
+  - `service/task_polling.go`（`// Fy-api overlay:`：轮询阶段先创建/查询 Ark asset，active 后用 `asset://<provider_asset_id>` 二次提交 Seedance）
+  - `controller/relay.go`（`// Fy-api overlay:`：把 submit result 中的 staged private data 写入 task）
+  - `web/classic/src/components/table/channels/modals/EditChannelModal.jsx`（`// Fy-api overlay:`：type 45 渠道编辑弹窗显示 Seedance 真人素材库配置，写入 `settings` JSON）
+  - `web/classic/src/i18n/locales/{zh-CN,zh-TW,zh,en,fr,ja,ru,vi}.json`（新增 Seedance 真人素材库配置文案）
+  - `go.mod` / `go.sum`（新增 `github.com/volcengine/volcengine-go-sdk`）
+- **配置**：不改 `channels` 表结构。现有 type 45 渠道继续用 `channel.key` 调主视频接口；Ark Asset Service 凭证存入渠道 `settings` JSON：`seedance_asset_access_key`、`seedance_asset_secret_key`、`seedance_asset_group_id`，可选 `seedance_asset_project_name` / `seedance_asset_region` / `seedance_asset_endpoint` / `seedance_asset_timeout_seconds`
+- **行为**：客户仍通过 `/v1/videos` 传普通真人图片 URL；fy-api 内部异步准备可信素材，审核通过后改写成 `asset://...` 再提交 Seedance。素材创建/审核/二次提交失败时任务失败并复用现有异步任务退款逻辑。视频任务进入最终态 success/failure 后，轮询器 best-effort 调用 `DeleteAsset` 清理本任务创建的 Ark asset；删除失败只写入 `cleanup_status=failed` 和日志，不影响用户任务结果。
+- **冲突风险**：中（`relay/relay_task.go` 和 `service/task_polling.go` 是任务提交/轮询核心；保留 overlay 注释和单测，upstream 同步时不能丢掉 staged task 的 private data）
 
 ---
 
