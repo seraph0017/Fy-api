@@ -1,9 +1,11 @@
 ---
 name: hotfix-pr-flow
-description: Use when a TraceNex/Fy-api production hotfix must ship independently to main while also syncing the same fix to develop.
+description: Use when a TraceNex/Fy-api production hotfix must ship independently to main while also syncing the same fix to develop. This is the detailed execution guide for the hotfix type defined in branching-strategy.
 ---
 
 # Hotfix PR Flow
+
+> 本 skill 是 `branching-strategy` 中 hotfix 类型的详细执行手册。分支判断逻辑见 `branching-strategy`。
 
 Use this for Fy-api/TraceNex urgent fixes that should be releasable from `main` without waiting for `develop`.
 

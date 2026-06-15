@@ -23,3 +23,16 @@ func GetVideoInputRatio(modelName string) (float64, bool) {
 	r, ok := videoInputRatioMap[modelName]
 	return r, ok
 }
+
+// seedance1080pRatioMap converts the 720p base task price to the user-facing
+// 1080p product price. Pipeline execution may submit 720p upstream, but billing
+// must still follow the requested product tier.
+var seedance1080pRatioMap = map[string]float64{
+	"doubao-seedance-2-0-260128":      46.0 / 28.0,
+	"doubao-seedance-2-0-fast-260128": 37.0 / 22.0,
+}
+
+func GetSeedance1080pBillingRatio(modelName string) (float64, bool) {
+	r, ok := seedance1080pRatioMap[modelName]
+	return r, ok
+}

@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -132,18 +133,27 @@ func (a *TaskAdaptor) BuildRequestHeader(_ *gin.Context, req *http.Request, _ *r
 	return nil
 }
 
-// EstimateBilling 检测请求 metadata 中是否包含视频输入，返回视频折扣 OtherRatio。
+// EstimateBilling returns user-facing billing ratios from the original request.
 func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) map[string]float64 {
 	req, err := relaycommon.GetTaskRequest(c)
 	if err != nil {
 		return nil
 	}
-	if hasVideoInMetadata(req.Metadata) {
-		if ratio, ok := GetVideoInputRatio(info.OriginModelName); ok {
-			return map[string]float64{"video_input": ratio}
+	ratios := make(map[string]float64)
+	if analysis, err := service.AnalyzeVideoRequest(req); err == nil && analysis.RequestedResolution == "1080p" {
+		if ratio, ok := GetSeedance1080pBillingRatio(info.OriginModelName); ok {
+			ratios["seedance_1080p"] = ratio
 		}
 	}
-	return nil
+	if hasVideoInMetadata(req.Metadata) {
+		if ratio, ok := GetVideoInputRatio(info.OriginModelName); ok {
+			ratios["video_input"] = ratio
+		}
+	}
+	if len(ratios) == 0 {
+		return nil
+	}
+	return ratios
 }
 
 // hasVideoInMetadata 直接检查 metadata 的 content 数组是否包含 video_url 条目，
@@ -181,6 +191,17 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 	if err != nil {
 		return nil, err
 	}
+	// Fy-api overlay: build optional TraceNex video pipeline plan before
+	// provider conversion. The adaptor only applies the resulting generation
+	// payload; strategy selection stays in service/.
+	plan, err := service.BuildVideoPipelinePlan(c, info, req)
+	if err != nil {
+		return nil, err
+	}
+	if plan != nil {
+		service.StoreVideoPipelinePlan(c, plan)
+		service.AttachVideoPipelinePlan(info, plan)
+	}
 
 	body, err := a.convertToRequestPayload(&req)
 	if err != nil {
@@ -189,6 +210,14 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 	if info.IsModelMapped {
 		body.Model = info.UpstreamModelName
 	} else {
+		info.UpstreamModelName = body.Model
+	}
+	if plan != nil {
+		body.Model = plan.Generation.Model
+		body.Resolution = plan.Generation.Resolution
+		if plan.Generation.Ratio != "" {
+			body.Ratio = plan.Generation.Ratio
+		}
 		info.UpstreamModelName = body.Model
 	}
 	data, err := common.Marshal(body)
@@ -272,15 +301,48 @@ func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq) (*
 		Model:   req.Model,
 		Content: []ContentItem{},
 	}
+	seenContent := make(map[string]bool)
 
 	// Add images if present
+	if req.Image != "" {
+		appendContentItem(&r.Content, seenContent, ContentItem{
+			Type:     "image_url",
+			ImageURL: &MediaURL{URL: req.Image},
+			Role:     "reference_image",
+		})
+	}
 	if req.HasImage() {
 		for _, imgURL := range req.Images {
-			r.Content = append(r.Content, ContentItem{
+			appendContentItem(&r.Content, seenContent, ContentItem{
 				Type: "image_url",
 				ImageURL: &MediaURL{
 					URL: imgURL,
 				},
+				Role: "reference_image",
+			})
+		}
+	}
+	if req.InputReference != "" {
+		appendContentItem(&r.Content, seenContent, ContentItem{
+			Type:     "image_url",
+			ImageURL: &MediaURL{URL: req.InputReference},
+			Role:     "reference_image",
+		})
+	}
+	for _, media := range req.Media {
+		mediaType := strings.ToLower(strings.TrimSpace(media.Type))
+		switch mediaType {
+		case "image", "image_url":
+			appendContentItem(&r.Content, seenContent, ContentItem{
+				Type:     "image_url",
+				ImageURL: &MediaURL{URL: media.URL},
+				Role:     "reference_image",
+			})
+		case "video", "video_url":
+			appendContentItem(&r.Content, seenContent, ContentItem{
+				Type:     "video_url",
+				VideoURL: &MediaURL{URL: media.URL},
+				Role:     "reference_video",
 			})
 		}
 	}
@@ -289,6 +351,22 @@ func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq) (*
 	if err := taskcommon.UnmarshalMetadata(metadata, &r); err != nil {
 		return nil, errors.Wrap(err, "unmarshal metadata failed")
 	}
+	// Fy-api overlay: OpenAI-like video requests express the requested output
+	// shape as size, while Seedance expects resolution + ratio. Apply that
+	// mapping for all paths, including direct generation and asset-prepared
+	// submissions, so reference-image requests do not silently inherit the
+	// source image aspect ratio.
+	if r.Resolution == "" || r.Ratio == "" {
+		if analysis, err := service.AnalyzeVideoRequest(*req); err == nil {
+			if r.Resolution == "" {
+				r.Resolution = analysis.RequestedResolution
+			}
+			if r.Ratio == "" {
+				r.Ratio = analysis.Ratio
+			}
+		}
+	}
+	normalizeReferenceContentRoles(r.Content)
 
 	if sec, _ := strconv.Atoi(req.Seconds); sec > 0 {
 		r.Duration = lo.ToPtr(dto.IntValue(sec))
@@ -301,6 +379,47 @@ func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq) (*
 	})
 
 	return &r, nil
+}
+
+func appendContentItem(items *[]ContentItem, seen map[string]bool, item ContentItem) {
+	key := contentItemKey(item)
+	if key == "" || seen[key] {
+		return
+	}
+	seen[key] = true
+	*items = append(*items, item)
+}
+
+func contentItemKey(item ContentItem) string {
+	switch item.Type {
+	case "image_url":
+		if item.ImageURL != nil {
+			return "image:" + strings.TrimSpace(item.ImageURL.URL)
+		}
+	case "video_url":
+		if item.VideoURL != nil {
+			return "video:" + strings.TrimSpace(item.VideoURL.URL)
+		}
+	case "audio_url":
+		if item.AudioURL != nil {
+			return "audio:" + strings.TrimSpace(item.AudioURL.URL)
+		}
+	}
+	return ""
+}
+
+func normalizeReferenceContentRoles(items []ContentItem) {
+	for i := range items {
+		if items[i].Role != "" {
+			continue
+		}
+		switch items[i].Type {
+		case "image_url":
+			items[i].Role = "reference_image"
+		case "video_url":
+			items[i].Role = "reference_video"
+		}
+	}
 }
 
 func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, error) {
@@ -352,7 +471,11 @@ func (a *TaskAdaptor) ConvertToOpenAIVideo(originTask *model.Task) ([]byte, erro
 	openAIVideo.TaskID = originTask.TaskID
 	openAIVideo.Status = originTask.Status.ToVideoStatus()
 	openAIVideo.SetProgressStr(originTask.Progress)
-	openAIVideo.SetMetadata("url", dResp.Content.VideoURL)
+	if resultURL := originTask.GetResultURL(); resultURL != "" {
+		openAIVideo.SetMetadata("url", resultURL)
+	} else {
+		openAIVideo.SetMetadata("url", dResp.Content.VideoURL)
+	}
 	openAIVideo.CreatedAt = originTask.CreatedAt
 	openAIVideo.CompletedAt = originTask.UpdatedAt
 	openAIVideo.Model = originTask.Properties.OriginModelName

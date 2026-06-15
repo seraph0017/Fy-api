@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay/channel"
+	"github.com/QuantumNous/new-api/relay/channel/task/doubao"
 	"github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
@@ -27,6 +28,7 @@ type TaskSubmitResult struct {
 	TaskData       []byte
 	Platform       constant.TaskPlatform
 	Quota          int
+	PrivateData    *model.TaskPrivateData
 	//PerCallPrice   types.PriceData
 }
 
@@ -210,6 +212,38 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 		}
 	}
 
+	// Fy-api overlay: Seedance 2.0 real-person image references must be converted
+	// to Ark trusted assets before the actual video task is submitted upstream.
+	if info.ChannelType == constant.ChannelTypeDoubaoVideo || info.ChannelType == constant.ChannelTypeVolcEngine {
+		req, reqErr := relaycommon.GetTaskRequest(c)
+		if reqErr == nil {
+			prepare, ok := doubao.NeedsSeedanceAssetPrepare(req, info.UpstreamModelName)
+			if ok {
+				if prepare.Request != nil {
+					prepare.Request.Model = info.OriginModelName
+				}
+				privateData := &model.TaskPrivateData{
+					UpstreamTaskID:       doubao.SeedanceAssetPrepareIDPrefix + info.PublicTaskID,
+					SeedanceAssetPrepare: prepare,
+				}
+				taskData := doubao.SeedanceAssetPrepareTaskData(info.PublicTaskID, info.OriginModelName)
+				var ov dto.OpenAIVideo
+				if err := common.Unmarshal(taskData, &ov); err == nil {
+					c.JSON(http.StatusOK, ov)
+				} else {
+					c.Data(http.StatusOK, "application/json", taskData)
+				}
+				return &TaskSubmitResult{
+					UpstreamTaskID: privateData.UpstreamTaskID,
+					TaskData:       taskData,
+					Platform:       platform,
+					Quota:          info.PriceData.Quota,
+					PrivateData:    privateData,
+				}, nil
+			}
+		}
+	}
+
 	// 8. 构建请求体
 	requestBody, err := adaptor.BuildRequestBody(c, info)
 	if err != nil {
@@ -254,6 +288,7 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 		TaskData:       taskData,
 		Platform:       platform,
 		Quota:          finalQuota,
+		PrivateData:    nil,
 	}, nil
 }
 

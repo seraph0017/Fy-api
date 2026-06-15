@@ -26,8 +26,8 @@ import (
 	"github.com/QuantumNous/new-api/router"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/service/outbox"
-	_ "github.com/QuantumNous/new-api/setting/performance_setting"
 	"github.com/QuantumNous/new-api/setting/overlay_flag"
+	_ "github.com/QuantumNous/new-api/setting/performance_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/bytedance/gopkg/util/gopool"
@@ -281,6 +281,9 @@ func InitResources() error {
 	service.InitHttpClient()
 
 	service.InitTokenEncoders()
+
+	// Fy-api overlay: load and watch runtime video pipeline strategy config.
+	service.InitVideoPipelineConfig()
 
 	// Initialize SQL Database
 	err = model.InitDB()
