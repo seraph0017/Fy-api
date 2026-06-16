@@ -447,6 +447,10 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 		// 解析 usage 信息用于按倍率计费
 		taskResult.CompletionTokens = resTask.Usage.CompletionTokens
 		taskResult.TotalTokens = resTask.Usage.TotalTokens
+		// Fy-api overlay: carry provider video usage for internal estimated cost snapshots.
+		taskResult.DurationSeconds = float64(resTask.Duration)
+		taskResult.FPS = float64(resTask.FramesPerSecond)
+		taskResult.Resolution = resTask.Resolution
 	case "failed":
 		taskResult.Status = model.TaskStatusFailure
 		taskResult.Progress = "100%"

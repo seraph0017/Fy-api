@@ -809,6 +809,10 @@ type TaskInfo struct {
 	Progress         string `json:"progress,omitempty"`
 	CompletionTokens int    `json:"completion_tokens,omitempty"` // 用于按倍率计费
 	TotalTokens      int    `json:"total_tokens,omitempty"`      // 用于按倍率计费
+	// Fy-api overlay: provider video usage used only for internal estimated cost snapshots.
+	DurationSeconds float64 `json:"duration_seconds,omitempty"`
+	FPS             float64 `json:"fps,omitempty"`
+	Resolution      string  `json:"resolution,omitempty"`
 }
 
 func FailTaskInfo(reason string) *TaskInfo {

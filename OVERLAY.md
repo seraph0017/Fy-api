@@ -420,6 +420,15 @@
   - `relay/channel/task/doubao/adaptor_pipeline_test.go`
   - `model/task_seedance_enhance_test.go`
 - **行为**：pipeline 策略由 `config/video-pipeline.yaml` 驱动，配置结构为 `version/defaults/strategies/lifecycle.match/lifecycle.rollout`；保存后通过 fsnotify 热加载。配置文件缺失、解析失败、`defaults.enabled=false`、单策略 `enabled=false`、未命中 match 或灰度拒绝时，统一回退原始直连生成路径。用户仍按请求模型/1080p 产品价计费；内部仅将 Seedance 2.0 1080p 请求改为同一 Seedance 2.0 模型的 720p generation + 火山 MediaKit 1080p 标准增强，不再按 storyboard、静态 prompt、多参考图等请求特征切换到 1.5-pro 或其它 generation 模型。内部 generation/enhance task id、策略命中、字段映射/丢弃、供应商成本记录在 `PrivateData.SeedanceEnhance`，不直接返回用户。
+- **成本估算扩展（2026-06-15）**：
+  - 新增 `service/media_provider_cost.go` / `service/video_pipeline_cost.go`，按火山官方价格实时估算 Seedance 2.0 generation 与 AI MediaKit enhance-video provider cost；该成本仅用于实时观测和灰度评估，不作为最终财务毛利。
+  - Seedance 2.0 优先使用 provider `usage.completion_tokens`，否则按 `(输入视频时长 + 输出视频时长) × 输出宽 × 输出高 × fps / 1024` 估算；价格按 `doubao-seedance-2.0` 720p/1080p、`doubao-seedance-2.0-fast`、`doubao-seedance-2.0-mini` 官网元/百万 token 档位。
+  - MediaKit 当前 pipeline 使用 `tool_version=standard`、`resolution=1080p`、`scene=aigc`；成本按 `输出时长分钟 × 计费换算系数 × 0.75 元/分钟`，标准版/专业版共用 0.75 基价，专业版仅通过更高系数放大。不得把“画质增强（大模型）”的 2.5 元/分钟基价套到 standard/professional。
+  - 新增 `cost_price_version`、`rmb_per_usd`、generation/enhance RMB/quota、billable tokens、billing coefficient、gross profit/margin 等字段到 `model.SeedanceEnhancePipeline`，并在现有 JSON 字段内保存 `generation_cost_detail` / `enhance_cost_detail`（公式 key/version/text、变量、系数、usage source、`cost_quota`、`cost_rmb`），不新增成本表；task billing `other` 同步输出内部 `*_estimate_*` 和 `provider_cost_estimate_details` 字段，供数据库同步后做报表。
+  - CN/SG 两个平台展示币种可能不同，内部 provider cost 以 `cost_quota` 为主口径，RMB 仅作为供应商价格来源和对账辅助；换算公式固定记录为 `cost_quota = round(cost_rmb / rmb_per_usd * quota_per_unit)`。
+  - 用户侧日志列表和 `/api/log/self/export?format=json` 统一脱敏 provider cost、公式、变量、系数、毛利等内部字段；管理员日志和 admin export 保留完整成本明细。用户实际扣费仍由原任务 billing pipeline 决定。
+  - MediaKit 闲时/低优先级不按本地时间推断；当前把 provider 返回的 `task_type` 记录为 `enhance_provider_task_type`，任务等级仍默认 `normal`，未来若官方为 `enhance-video` 提供显式低优先级字段，再按提交参数或返回字段扩展。
+- **参考文档**：`docs/seedance-mediakit-cost-plan.md`
 - **冲突风险**：中（`service/task_polling.go` 和 `relay/channel/task/doubao/adaptor.go` 是 upstream 活跃区域）
 - **Merge 策略**：主体逻辑保留在新增 service/model 文件中；upstream 合并时只重放 controller/adaptor/polling 的极薄 `// Fy-api overlay:` hook。不得把策略判断写进 controller 或把火山增强状态机写进 Doubao adaptor。
 
