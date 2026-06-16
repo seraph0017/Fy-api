@@ -76,9 +76,47 @@ func formatUserLogs(logs []*Log, startIdx int) {
 			delete(otherMap, "admin_info")
 			// delete(otherMap, "reject_reason")
 			delete(otherMap, "stream_status")
+			redactInternalCostEstimateFields(otherMap)
 		}
 		logs[i].Other = common.MapToJsonStr(otherMap)
 		logs[i].Id = startIdx + i + 1
+	}
+}
+
+func redactInternalCostEstimateFields(other map[string]interface{}) {
+	if other == nil {
+		return
+	}
+	for _, key := range []string{
+		"pipeline_provider_cost_estimate",
+		"provider_cost_estimate_quota",
+		"generation_cost_estimate_quota",
+		"enhance_cost_estimate_quota",
+		"user_billed_quota",
+		"gross_profit_estimate_quota",
+		"gross_margin_estimate",
+		"cost_price_version",
+		"rmb_per_usd",
+		"seedance_usage_source",
+		"seedance_billable_tokens",
+		"seedance_estimated_tokens",
+		"generation_cost_estimate_rmb",
+		"enhance_cost_estimate_rmb",
+		"provider_cost_estimate_rmb",
+		"enhance_billing_version",
+		"enhance_tool_version",
+		"enhance_scene",
+		"enhance_output_resolution",
+		"enhance_output_fps",
+		"enhance_base_price_rmb_per_minute",
+		"enhance_billing_coefficient",
+		"enhance_provider_task_type",
+		"enhance_task_class",
+		"enhance_task_class_source",
+		"actual_duration_seconds",
+		"provider_cost_estimate_details",
+	} {
+		delete(other, key)
 	}
 }
 

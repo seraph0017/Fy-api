@@ -24,6 +24,9 @@ type MediaKitSubmitRequest struct {
 	Scene       string `json:"scene,omitempty"`
 	ToolVersion string `json:"tool_version,omitempty"`
 	Resolution  string `json:"resolution,omitempty"`
+	// Fy-api overlay: reserved for future explicit output-FPS requests; the
+	// current standard pipeline leaves FPS empty and estimates cost from result.
+	FPS string `json:"fps,omitempty"`
 }
 
 type MediaKitSubmitResponse struct {
