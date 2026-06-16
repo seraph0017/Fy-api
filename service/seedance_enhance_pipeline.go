@@ -28,21 +28,42 @@ func AdvanceVideoPipelineIfNeeded(ctx context.Context, task *model.Task, taskRes
 	if p.GenerationVideoURL == "" && taskResult.Url != "" {
 		p.GenerationVideoURL = taskResult.Url
 	}
+	if taskResult.Status == model.TaskStatusSuccess {
+		// Fy-api overlay: prefer upstream reported Seedance usage for the
+		// internal provider-cost estimate before the MediaKit phase starts.
+		applySeedanceGenerationCostSnapshot(p, relaycommon.TaskSubmitReq{}, taskResult)
+		updatePipelineCostTotals(p)
+	}
 	if len(responseBody) > 0 {
 		task.Data = redactVideoResponseBody(responseBody)
 	}
 
 	client := NewMediaKitClientFromEnv()
 	if p.EnhanceTaskID == "" {
+		toolVersion := p.EnhanceToolVersion
+		if toolVersion == "" {
+			toolVersion = "standard"
+		}
+		scene := p.EnhanceScene
+		if scene == "" {
+			scene = "aigc"
+		}
+		resolution := p.EnhanceTargetResolution
+		if resolution == "" {
+			resolution = p.EnhanceOutputResolution
+		}
 		submit, err := client.SubmitEnhanceVideo(ctx, MediaKitSubmitRequest{
 			VideoURL:    p.GenerationVideoURL,
-			Scene:       "aigc",
-			ToolVersion: "standard",
-			Resolution:  p.EnhanceTargetResolution,
+			Scene:       scene,
+			ToolVersion: toolVersion,
+			Resolution:  resolution,
 		})
 		if err != nil {
 			return completePipelineWithFallback(ctx, task, snap.Status, fmt.Sprintf("submit enhance failed: %s", err.Error()))
 		}
+		p.EnhanceScene = scene
+		p.EnhanceToolVersion = toolVersion
+		p.EnhanceOutputResolution = resolution
 		p.EnhanceTaskID = submit.TaskID
 		p.EnhanceRequestID = submit.RequestID
 		p.Status = "enhance_submitted"
@@ -69,12 +90,14 @@ func AdvanceVideoPipelineIfNeeded(ctx context.Context, task *model.Task, taskRes
 	}
 	switch res.Status {
 	case "completed", "success", "succeeded":
+		// Fy-api overlay: record MediaKit list-price estimate on task private
+		// data when the enhancement phase finishes.
 		p.Status = "enhance_succeeded"
 		p.EnhancedVideoURL = res.Result.VideoURL
 		p.ActualDurationSeconds = res.Result.Duration
 		p.ActualFPS = res.Result.FPS
-		p.EnhanceCostQuota = calculateMediaKitEnhanceCostQuota(res.Result.Duration, res.Result.FPS)
-		p.PipelineProviderCost = p.GenerationCostQuota + p.EnhanceCostQuota
+		applyMediaKitEnhanceCostSnapshot(p, res)
+		updatePipelineCostTotals(p)
 		task.PrivateData.ResultURL = res.Result.VideoURL
 		task.Status = model.TaskStatusSuccess
 		task.Progress = taskcommon.ProgressComplete
@@ -129,15 +152,4 @@ func completePipelineWithFallback(_ context.Context, task *model.Task, oldStatus
 	}
 	common.SysLog(fmt.Sprintf("video pipeline fallback task=%s reason=%s", task.TaskID, reason))
 	return true, nil
-}
-
-func calculateMediaKitEnhanceCostQuota(durationSeconds, fps float64) int {
-	if durationSeconds <= 0 {
-		return 0
-	}
-	unitPerSecond := 0.025
-	if fps > 30 {
-		unitPerSecond = 0.05
-	}
-	return int(durationSeconds * unitPerSecond * common.QuotaPerUnit)
 }

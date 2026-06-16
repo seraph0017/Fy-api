@@ -5,7 +5,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
@@ -136,17 +135,25 @@ func BuildVideoPipelinePlan(c *gin.Context, info *relaycommon.RelayInfo, req rel
 }
 
 func ApplyVideoPipelineSubmitSnapshot(c *gin.Context, task *model.Task, info *relaycommon.RelayInfo) {
+	// Fy-api overlay: persist the Seedance -> MediaKit pipeline plan and an
+	// estimated provider-cost snapshot for observability only. Actual user
+	// billing remains the pre-existing task quota on task.Quota.
 	plan, ok := GetVideoPipelinePlan(c)
+	var req relaycommon.TaskSubmitReq
+	hasReq := false
+	if c != nil {
+		if parsed, err := relaycommon.GetTaskRequest(c); err == nil {
+			req = parsed
+			hasReq = true
+		}
+	}
 	if !ok && info != nil && info.TaskRelayInfo != nil {
 		plan, ok = info.TaskRelayInfo.VideoPipelinePlan.(*VideoPipelinePlan)
 	}
-	if !ok && c != nil {
-		req, err := relaycommon.GetTaskRequest(c)
-		if err == nil {
-			if rebuilt, rebuildErr := BuildVideoPipelinePlan(c, info, req); rebuildErr == nil && rebuilt != nil {
-				plan = rebuilt
-				ok = true
-			}
+	if !ok && hasReq {
+		if rebuilt, rebuildErr := BuildVideoPipelinePlan(c, info, req); rebuildErr == nil && rebuilt != nil {
+			plan = rebuilt
+			ok = true
 		}
 	}
 	if !ok || task == nil || plan == nil {
@@ -172,41 +179,24 @@ func ApplyVideoPipelineSubmitSnapshot(c *gin.Context, task *model.Task, info *re
 		GenerationModel:         plan.Generation.Model,
 		GenerationTaskID:        task.PrivateData.UpstreamTaskID,
 		EnhanceProvider:         "",
-		GenerationCostQuota:     estimateVideoPipelineGenerationCostQuota(task, info),
+		CostPriceVersion:        mediaProviderCostPriceVersion,
+		RMBPerUSD:               mediaProviderRMBPerUSD,
+		GenerationUsageSource:   "param_estimated",
 		UserBilledQuota:         task.Quota,
 	}
+	applySeedanceGenerationCostSnapshot(p, req, nil)
 	if plan.Enhance != nil {
 		p.EnhanceProvider = plan.Enhance.Provider
 		p.EnhanceTargetResolution = plan.Enhance.Resolution
+		p.EnhanceToolVersion = plan.Enhance.ToolVersion
+		p.EnhanceScene = plan.Enhance.Scene
+		p.EnhanceOutputResolution = plan.Enhance.Resolution
 	}
 	if info != nil && info.ChannelMeta != nil {
 		p.GenerationChannelID = info.ChannelId
 	}
+	updatePipelineCostTotals(p)
 	task.PrivateData.SeedanceEnhance = p
-}
-
-func estimateVideoPipelineGenerationCostQuota(task *model.Task, info *relaycommon.RelayInfo) int {
-	if info != nil && info.PriceData.UsePrice && info.PriceData.ModelPrice > 0 {
-		cost := info.PriceData.ModelPrice * common.QuotaPerUnit * info.PriceData.GroupRatioInfo.GroupRatio
-		for key, ratio := range info.PriceData.OtherRatios {
-			if key == "seedance_1080p" {
-				continue
-			}
-			if ratio > 0 {
-				cost *= ratio
-			}
-		}
-		if cost > 0 {
-			return int(cost)
-		}
-	}
-	if task == nil || task.Quota <= 0 || info == nil {
-		return 0
-	}
-	if ratio := info.PriceData.OtherRatios["seedance_1080p"]; ratio > 0 {
-		return int(float64(task.Quota) / ratio)
-	}
-	return task.Quota
 }
 
 func matchVideoPipelineStrategy(info *relaycommon.RelayInfo, req relaycommon.TaskSubmitReq, analysis model.VideoRequestAnalysis) (VideoPipelineStrategyConfig, bool) {

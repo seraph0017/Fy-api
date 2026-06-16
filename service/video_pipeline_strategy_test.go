@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
@@ -327,7 +326,9 @@ func TestApplyVideoPipelineSubmitSnapshotSeparatesUserBillingFromProviderCost(t 
 
 	require.NotNil(t, task.PrivateData.SeedanceEnhance)
 	assert.Equal(t, 112524, task.PrivateData.SeedanceEnhance.UserBilledQuota)
-	assert.Equal(t, 68493, task.PrivateData.SeedanceEnhance.GenerationCostQuota)
+	assert.Equal(t, RMBToQuota(4.968), task.PrivateData.SeedanceEnhance.GenerationCostQuota)
+	assert.Equal(t, task.PrivateData.SeedanceEnhance.UserBilledQuota-task.PrivateData.SeedanceEnhance.GenerationCostQuota, task.PrivateData.SeedanceEnhance.GrossProfitQuota)
+	assert.InDelta(t, float64(task.PrivateData.SeedanceEnhance.GrossProfitQuota)/112524, task.PrivateData.SeedanceEnhance.GrossMargin, 0.000001)
 }
 
 func TestApplyVideoPipelineSubmitSnapshotRebuildsPlanFromRequest(t *testing.T) {
@@ -352,6 +353,56 @@ func TestApplyVideoPipelineSubmitSnapshotRebuildsPlanFromRequest(t *testing.T) {
 	assert.Equal(t, "720p", task.PrivateData.SeedanceEnhance.GenerationResolution)
 	assert.Equal(t, "1080p", task.PrivateData.SeedanceEnhance.EnhanceTargetResolution)
 	assert.Equal(t, "generation-2", task.PrivateData.SeedanceEnhance.GenerationTaskID)
+	assert.Equal(t, "param_estimated", task.PrivateData.SeedanceEnhance.GenerationUsageSource)
+	assert.Equal(t, int64(108000), task.PrivateData.SeedanceEnhance.GenerationEstimatedTokens)
+	assert.Equal(t, RMBToQuota(4.968), task.PrivateData.SeedanceEnhance.GenerationCostQuota)
+}
+
+func TestApplySeedanceGenerationCostSnapshotUsesProviderUsage(t *testing.T) {
+	p := &model.SeedanceEnhancePipeline{
+		GenerationModel:      "doubao-seedance-2-0-260128",
+		GenerationResolution: "720p",
+		Ratio:                "16:9",
+		UserBilledQuota:      112524,
+	}
+
+	applySeedanceGenerationCostSnapshot(p, relaycommon.TaskSubmitReq{Seconds: "5"}, &relaycommon.TaskInfo{
+		CompletionTokens: 250_000,
+		DurationSeconds:  8,
+		FPS:              30,
+		Resolution:       "1080p",
+	})
+	updatePipelineCostTotals(p)
+
+	assert.Equal(t, "provider_usage_estimated", p.GenerationUsageSource)
+	assert.Equal(t, int64(250_000), p.GenerationBillableTokens)
+	assert.Zero(t, p.GenerationEstimatedTokens)
+	assert.Equal(t, 12.75, p.GenerationCostRMB)
+	assert.Equal(t, RMBToQuota(12.75), p.GenerationCostQuota)
+	assert.Equal(t, 112524-p.GenerationCostQuota, p.GrossProfitQuota)
+}
+
+func TestApplySeedanceGenerationCostSnapshotFallsBackToProviderVideoShape(t *testing.T) {
+	p := &model.SeedanceEnhancePipeline{
+		GenerationModel:      "doubao-seedance-2-0-260128",
+		GenerationResolution: "720p",
+		Ratio:                "16:9",
+		Analysis: model.VideoRequestAnalysis{
+			HasVideoReference: true,
+		},
+	}
+
+	applySeedanceGenerationCostSnapshot(p, relaycommon.TaskSubmitReq{Seconds: "5"}, &relaycommon.TaskInfo{
+		DurationSeconds: 8,
+		FPS:             30,
+		Resolution:      "1080p",
+	})
+
+	assert.Equal(t, "param_estimated", p.GenerationUsageSource)
+	assert.Equal(t, int64(972000), p.GenerationEstimatedTokens)
+	assert.Equal(t, int64(972000), p.GenerationBillableTokens)
+	assert.Equal(t, 30.132, p.GenerationCostRMB)
+	assert.Equal(t, RMBToQuota(30.132), p.GenerationCostQuota)
 }
 
 func TestAnalyzeVideoRequest_ResolutionSizeAllowsMetadataRatio(t *testing.T) {
@@ -407,7 +458,7 @@ func TestAdvanceVideoPipelineIfNeeded_SubmitThenComplete(t *testing.T) {
 		case "/api/v1/tools/enhance-video":
 			_, _ = w.Write([]byte(`{"success":true,"task_id":"enhance-1","request_id":"req-1"}`))
 		case "/api/v1/tasks/enhance-1":
-			_, _ = w.Write([]byte(`{"success":true,"task_id":"enhance-1","status":"completed","result":{"duration":5,"fps":30,"resolution":"1080p","video_url":"https://cdn.example.com/enhanced.mp4"}}`))
+			_, _ = w.Write([]byte(`{"success":true,"task_id":"enhance-1","task_type":"enhance-video","status":"completed","result":{"duration":5,"fps":30,"resolution":"1080p","video_url":"https://cdn.example.com/enhanced.mp4"}}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -460,7 +511,16 @@ func TestAdvanceVideoPipelineIfNeeded_SubmitThenComplete(t *testing.T) {
 	assert.EqualValues(t, model.TaskStatusSuccess, done.Status)
 	assert.Equal(t, "https://cdn.example.com/enhanced.mp4", done.PrivateData.ResultURL)
 	assert.Equal(t, "enhance_succeeded", done.PrivateData.SeedanceEnhance.Status)
-	assert.Equal(t, int(5*0.025*common.QuotaPerUnit), done.PrivateData.SeedanceEnhance.EnhanceCostQuota)
+	assert.Equal(t, RMBToQuota(0.125), done.PrivateData.SeedanceEnhance.EnhanceCostQuota)
+	assert.Equal(t, 0.75, done.PrivateData.SeedanceEnhance.EnhanceBasePriceRMBPerMinute)
+	assert.Equal(t, 2.0, done.PrivateData.SeedanceEnhance.EnhanceBillingCoefficient)
+	assert.Equal(t, "standard", done.PrivateData.SeedanceEnhance.EnhanceToolVersion)
+	assert.Equal(t, "1080p", done.PrivateData.SeedanceEnhance.EnhanceOutputResolution)
+	assert.Equal(t, 30.0, done.PrivateData.SeedanceEnhance.EnhanceOutputFPS)
+	assert.Equal(t, "enhance-video", done.PrivateData.SeedanceEnhance.EnhanceProviderTaskType)
+	assert.Equal(t, "normal", done.PrivateData.SeedanceEnhance.EnhanceTaskClass)
+	assert.Equal(t, "default", done.PrivateData.SeedanceEnhance.EnhanceTaskClassSource)
+	assert.Equal(t, done.PrivateData.SeedanceEnhance.GenerationCostQuota+done.PrivateData.SeedanceEnhance.EnhanceCostQuota, done.PrivateData.SeedanceEnhance.PipelineProviderCost)
 }
 
 func TestHydrateVideoPipelinePrivateDataMergesStaleTaskSnapshot(t *testing.T) {

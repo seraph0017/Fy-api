@@ -658,6 +658,191 @@ func TestLogTaskConsumption_IncludesOtherRatios(t *testing.T) {
 	assert.InDelta(t, 1/0.6, other["resolution-1080P"], 0.0001)
 }
 
+func TestLogTaskConsumption_IncludesVideoPipelineEstimateMarker(t *testing.T) {
+	truncate(t)
+	gin.SetMode(gin.TestMode)
+
+	const userID, channelID, tokenID = 25, 25, 25
+	seedUser(t, userID, 10000)
+	seedChannel(t, channelID)
+
+	c, _ := gin.CreateTestContext(nil)
+	c.Request, _ = http.NewRequest(http.MethodPost, "/v1/video/generations", nil)
+
+	info := &relaycommon.RelayInfo{
+		UserId: userID,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelId: channelID,
+		},
+		TokenId: tokenID,
+		TaskRelayInfo: &relaycommon.TaskRelayInfo{
+			Action: "generate",
+			VideoPipelinePlan: &VideoPipelinePlan{
+				StrategyName: VideoPipelineNameSeedanceEnhance,
+			},
+		},
+		OriginModelName: "doubao-seedance-2-0-260128",
+		UsingGroup:      "default",
+		PriceData: types.PriceData{
+			ModelPrice: 0.13698630137,
+			Quota:      112524,
+			GroupRatioInfo: types.GroupRatioInfo{
+				GroupRatio: 1,
+			},
+			UsePrice: true,
+		},
+	}
+
+	LogTaskConsumption(c, info)
+
+	log := getLastLog(t)
+	require.NotNil(t, log)
+
+	var other map[string]interface{}
+	require.NoError(t, common.Unmarshal([]byte(log.Other), &other))
+	assert.Equal(t, VideoPipelineNameSeedanceEnhance, other["pipeline"])
+	assert.Equal(t, true, other["pipeline_provider_cost_estimate"])
+}
+
+func TestTaskBillingOtherIncludesVideoPipelineCostEstimate(t *testing.T) {
+	task := makeTask(26, 26, 112524, 0, BillingSourceWallet, 0)
+	task.PrivateData.SeedanceEnhance = &model.SeedanceEnhancePipeline{
+		Pipeline:                     VideoPipelineNameSeedanceEnhance,
+		CostPriceVersion:             mediaProviderCostPriceVersion,
+		RMBPerUSD:                    mediaProviderRMBPerUSD,
+		GenerationUsageSource:        "provider_usage_estimated",
+		GenerationBillableTokens:     250000,
+		GenerationEstimatedTokens:    108000,
+		GenerationCostRMB:            12.75,
+		GenerationCostQuota:          RMBToQuota(12.75),
+		EnhanceBillingVersion:        mediaProviderCostPriceVersion,
+		EnhanceToolVersion:           "standard",
+		EnhanceScene:                 "aigc",
+		EnhanceOutputResolution:      "1080p",
+		EnhanceOutputFPS:             30,
+		EnhanceBasePriceRMBPerMinute: 0.75,
+		EnhanceBillingCoefficient:    2,
+		EnhanceProviderTaskType:      "enhance-video",
+		EnhanceTaskClass:             "normal",
+		EnhanceTaskClassSource:       "default",
+		EnhanceCostRMB:               0.125,
+		EnhanceCostQuota:             RMBToQuota(0.125),
+		PipelineProviderCost:         RMBToQuota(12.75) + RMBToQuota(0.125),
+		UserBilledQuota:              112524,
+		GrossProfitQuota:             112524 - RMBToQuota(12.75) - RMBToQuota(0.125),
+		GrossMargin:                  float64(112524-RMBToQuota(12.75)-RMBToQuota(0.125)) / 112524,
+		ActualDurationSeconds:        5,
+		GenerationCostDetail: &model.MediaCostEstimateDetail{
+			Component:      "generation",
+			FormulaKey:     "seedance_token_price",
+			FormulaVersion: mediaProviderCostPriceVersion,
+			FormulaText:    "cost_rmb = unit_price_rmb_per_million_tokens * billable_tokens / 1000000; cost_quota = round(cost_rmb / rmb_per_usd * quota_per_unit)",
+			Variables: map[string]interface{}{
+				"billable_tokens": int64(250000),
+			},
+			Coefficients: map[string]interface{}{
+				"unit_price_rmb_per_million_tokens": 51.0,
+				"price_tier":                        "doubao-seedance-2.0:1080p:no_video",
+				"rmb_per_usd":                       mediaProviderRMBPerUSD,
+				"quota_per_unit":                    common.QuotaPerUnit,
+			},
+			CostRMB:      12.75,
+			CostQuota:    RMBToQuota(12.75),
+			RMBPerUSD:    mediaProviderRMBPerUSD,
+			QuotaPerUnit: common.QuotaPerUnit,
+			Confidence:   "provider_usage_estimated",
+		},
+		EnhanceCostDetail: &model.MediaCostEstimateDetail{
+			Component:      "enhance",
+			FormulaKey:     "mediakit_enhance_video",
+			FormulaVersion: mediaProviderCostPriceVersion,
+			FormulaText:    "cost_rmb = base_price_rmb_per_minute * billing_coefficient * duration_minutes; cost_quota = round(cost_rmb / rmb_per_usd * quota_per_unit)",
+			Variables: map[string]interface{}{
+				"duration_seconds": 5.0,
+				"duration_minutes": 5.0 / 60.0,
+			},
+			Coefficients: map[string]interface{}{
+				"base_price_rmb_per_minute": 0.75,
+				"billing_coefficient":       2.0,
+				"rmb_per_usd":               mediaProviderRMBPerUSD,
+				"quota_per_unit":            common.QuotaPerUnit,
+			},
+			CostRMB:      0.125,
+			CostQuota:    RMBToQuota(0.125),
+			RMBPerUSD:    mediaProviderRMBPerUSD,
+			QuotaPerUnit: common.QuotaPerUnit,
+			Confidence:   "provider_usage_estimated",
+		},
+	}
+
+	other := taskBillingOther(task)
+
+	assert.Equal(t, VideoPipelineNameSeedanceEnhance, other["pipeline"])
+	assert.Equal(t, RMBToQuota(12.75)+RMBToQuota(0.125), other["provider_cost_estimate_quota"])
+	assert.Equal(t, 112524, other["user_billed_quota"])
+	assert.Equal(t, 112524-RMBToQuota(12.75)-RMBToQuota(0.125), other["gross_profit_estimate_quota"])
+	assert.InDelta(t, float64(112524-RMBToQuota(12.75)-RMBToQuota(0.125))/112524, other["gross_margin_estimate"], 0.000001)
+	assert.Equal(t, "provider_usage_estimated", other["seedance_usage_source"])
+	assert.Equal(t, int64(250000), other["seedance_billable_tokens"])
+	assert.Equal(t, int64(108000), other["seedance_estimated_tokens"])
+	assert.Equal(t, 12.75, other["generation_cost_estimate_rmb"])
+	assert.Equal(t, 0.125, other["enhance_cost_estimate_rmb"])
+	assert.Equal(t, 12.875, other["provider_cost_estimate_rmb"])
+	assert.Equal(t, "standard", other["enhance_tool_version"])
+	assert.Equal(t, "aigc", other["enhance_scene"])
+	assert.Equal(t, "1080p", other["enhance_output_resolution"])
+	assert.Equal(t, 30.0, other["enhance_output_fps"])
+	assert.Equal(t, 0.75, other["enhance_base_price_rmb_per_minute"])
+	assert.Equal(t, 2.0, other["enhance_billing_coefficient"])
+	assert.Equal(t, "enhance-video", other["enhance_provider_task_type"])
+	assert.Equal(t, "normal", other["enhance_task_class"])
+	assert.Equal(t, "default", other["enhance_task_class_source"])
+	assert.Equal(t, 5.0, other["actual_duration_seconds"])
+	details, ok := other["provider_cost_estimate_details"].([]interface{})
+	require.True(t, ok)
+	require.Len(t, details, 2)
+	generationDetail, ok := details[0].(*model.MediaCostEstimateDetail)
+	require.True(t, ok)
+	assert.Equal(t, "seedance_token_price", generationDetail.FormulaKey)
+	assert.Equal(t, "cost_rmb = unit_price_rmb_per_million_tokens * billable_tokens / 1000000; cost_quota = round(cost_rmb / rmb_per_usd * quota_per_unit)", generationDetail.FormulaText)
+	assert.Equal(t, int64(250000), generationDetail.Variables["billable_tokens"])
+	assert.Equal(t, 51.0, generationDetail.Coefficients["unit_price_rmb_per_million_tokens"])
+	assert.Equal(t, common.QuotaPerUnit, generationDetail.Coefficients["quota_per_unit"])
+	assert.Equal(t, common.QuotaPerUnit, generationDetail.QuotaPerUnit)
+	assert.Equal(t, RMBToQuota(12.75), generationDetail.CostQuota)
+	enhanceDetail, ok := details[1].(*model.MediaCostEstimateDetail)
+	require.True(t, ok)
+	assert.Equal(t, "mediakit_enhance_video", enhanceDetail.FormulaKey)
+	assert.Equal(t, "cost_rmb = base_price_rmb_per_minute * billing_coefficient * duration_minutes; cost_quota = round(cost_rmb / rmb_per_usd * quota_per_unit)", enhanceDetail.FormulaText)
+	assert.Equal(t, 2.0, enhanceDetail.Coefficients["billing_coefficient"])
+	assert.Equal(t, common.QuotaPerUnit, enhanceDetail.Coefficients["quota_per_unit"])
+	assert.Equal(t, common.QuotaPerUnit, enhanceDetail.QuotaPerUnit)
+	assert.Equal(t, RMBToQuota(0.125), enhanceDetail.CostQuota)
+}
+
+func TestTaskBillingOtherRefreshesVideoPipelineRevenueFromCurrentTaskQuota(t *testing.T) {
+	task := makeTask(27, 27, 120000, 0, BillingSourceWallet, 0)
+	providerCost := RMBToQuota(2.25)
+	task.PrivateData.SeedanceEnhance = &model.SeedanceEnhancePipeline{
+		Pipeline:             VideoPipelineNameSeedanceEnhance,
+		CostPriceVersion:     mediaProviderCostPriceVersion,
+		RMBPerUSD:            mediaProviderRMBPerUSD,
+		GenerationCostQuota:  providerCost,
+		PipelineProviderCost: providerCost,
+		UserBilledQuota:      100000,
+		GrossProfitQuota:     100000 - providerCost,
+		GrossMargin:          float64(100000-providerCost) / 100000,
+	}
+
+	other := taskBillingOther(task)
+
+	assert.Equal(t, 120000, other["user_billed_quota"])
+	assert.Equal(t, 120000-providerCost, other["gross_profit_estimate_quota"])
+	assert.InDelta(t, float64(120000-providerCost)/120000, other["gross_margin_estimate"], 0.000001)
+	assert.Equal(t, 120000, task.PrivateData.SeedanceEnhance.UserBilledQuota)
+	assert.Equal(t, 120000-providerCost, task.PrivateData.SeedanceEnhance.GrossProfitQuota)
+}
+
 // ===========================================================================
 // Mock adaptor for settleTaskBillingOnComplete tests
 // ===========================================================================

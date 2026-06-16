@@ -56,6 +56,14 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 			other[k] = v
 		}
 	}
+	// Fy-api overlay: mark Seedance->MediaKit pipeline task logs as carrying
+	// estimated provider cost metadata in the private task snapshot.
+	if info.TaskRelayInfo != nil {
+		if p, ok := info.TaskRelayInfo.VideoPipelinePlan.(*VideoPipelinePlan); ok && p != nil {
+			other["pipeline"] = p.StrategyName
+			other["pipeline_provider_cost_estimate"] = true
+		}
+	}
 	model.RecordConsumeLog(c, info.UserId, model.RecordConsumeLogParams{
 		ChannelId: info.ChannelId,
 		ModelName: info.OriginModelName,
@@ -142,7 +150,64 @@ func taskBillingOther(task *model.Task) map[string]interface{} {
 		other["is_model_mapped"] = true
 		other["upstream_model_name"] = props.UpstreamModelName
 	}
+	// Fy-api overlay: attach estimated provider cost fields to async task
+	// refund/recalculate logs without changing the actual billing delta.
+	syncVideoPipelineCostRevenue(task)
+	appendVideoPipelineCostOther(other, task.PrivateData.SeedanceEnhance)
 	return other
+}
+
+func syncVideoPipelineCostRevenue(task *model.Task) {
+	if task == nil || task.PrivateData.SeedanceEnhance == nil {
+		return
+	}
+	p := task.PrivateData.SeedanceEnhance
+	if task.Quota > 0 {
+		p.UserBilledQuota = task.Quota
+	}
+	updatePipelineCostTotals(p)
+}
+
+func appendVideoPipelineCostOther(other map[string]interface{}, p *model.SeedanceEnhancePipeline) {
+	if other == nil || p == nil {
+		return
+	}
+	other["pipeline"] = p.Pipeline
+	other["provider_cost_estimate_quota"] = p.PipelineProviderCost
+	other["generation_cost_estimate_quota"] = p.GenerationCostQuota
+	other["enhance_cost_estimate_quota"] = p.EnhanceCostQuota
+	other["user_billed_quota"] = p.UserBilledQuota
+	other["gross_profit_estimate_quota"] = p.GrossProfitQuota
+	other["gross_margin_estimate"] = p.GrossMargin
+	other["cost_price_version"] = p.CostPriceVersion
+	other["rmb_per_usd"] = p.RMBPerUSD
+	other["seedance_usage_source"] = p.GenerationUsageSource
+	other["seedance_billable_tokens"] = p.GenerationBillableTokens
+	other["seedance_estimated_tokens"] = p.GenerationEstimatedTokens
+	other["generation_cost_estimate_rmb"] = roundCostForLog(p.GenerationCostRMB)
+	other["enhance_cost_estimate_rmb"] = roundCostForLog(p.EnhanceCostRMB)
+	other["provider_cost_estimate_rmb"] = roundCostForLog(p.GenerationCostRMB + p.EnhanceCostRMB)
+	other["enhance_billing_version"] = p.EnhanceBillingVersion
+	other["enhance_tool_version"] = p.EnhanceToolVersion
+	other["enhance_scene"] = p.EnhanceScene
+	other["enhance_output_resolution"] = p.EnhanceOutputResolution
+	other["enhance_output_fps"] = p.EnhanceOutputFPS
+	other["enhance_base_price_rmb_per_minute"] = p.EnhanceBasePriceRMBPerMinute
+	other["enhance_billing_coefficient"] = p.EnhanceBillingCoefficient
+	other["enhance_provider_task_type"] = p.EnhanceProviderTaskType
+	other["enhance_task_class"] = p.EnhanceTaskClass
+	other["enhance_task_class_source"] = p.EnhanceTaskClassSource
+	other["actual_duration_seconds"] = p.ActualDurationSeconds
+	details := make([]interface{}, 0, 2)
+	if p.GenerationCostDetail != nil {
+		details = append(details, p.GenerationCostDetail)
+	}
+	if p.EnhanceCostDetail != nil {
+		details = append(details, p.EnhanceCostDetail)
+	}
+	if len(details) > 0 {
+		other["provider_cost_estimate_details"] = details
+	}
 }
 
 // taskModelName 从 BillingContext 或 Properties 中获取模型名称。
