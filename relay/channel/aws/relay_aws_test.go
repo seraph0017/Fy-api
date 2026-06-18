@@ -185,7 +185,7 @@ func TestBuildAwsRequestBodyPassThroughSanitizesBedrockOnlyFields(t *testing.T) 
 	out, err := buildAwsRequestBody(ctx, info, &AwsClaudeRequest{
 		AnthropicVersion: "bedrock-2023-05-31",
 		Messages:         []dto.ClaudeMessage{{Role: "user"}},
-		MaxTokens:        128,
+		MaxTokens:        common.GetPointer(uint(128)),
 	})
 	require.NoError(t, err)
 
