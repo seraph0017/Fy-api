@@ -1,8 +1,8 @@
 # TraceNex 定制清单（OVERLAY.md）
 
-> 最后更新：2026-06-07（同步上游 `upstream/main`，保留 TraceNex overlay）
+> 最后更新：2026-06-15（同步上游 `upstream/main`，保留 TraceNex overlay）
 > 维护人：<你的名字>
-> 上游基线：new-api @ `4ca47ee2` (2026-06-07)
+> 上游基线：new-api @ `9bc1a53d` (2026-06-15)
 >
 > **重要：上游 v1.0（commit `a42b39760`，2026-04-28）把整个老前端搬到了 `web/classic/`，并行新建了 `web/default/`（React 19 + TypeScript + Rsbuild + Base UI + Tailwind）。TraceNex 选择路径 A：所有前端 overlay 跟随 `web/classic/` 路径，runtime theme 锁死在 `"classic"`，不允许切到 default。详见 `docs/上游v1.0前端重写炸弹-影响分析与对策.md`。**
 
@@ -207,7 +207,7 @@
   2. Azure `gpt-image-2` 链路对 `response_format` 不兼容，工具默认不再发送该字段；网关运行时也会在命中 Azure GPT image 模型时删除该字段，旧 DALL-E 模型继续保留
   3. 2026-05-15 CN 线上排查确认：channel `42` 和 `43` 共享同一个 Azure `base_url + key`，并非独立配额桶；本地图片压测配置已按此降并发标注
 - **冲突风险**：低（benchmark 子树独立；`relay/image_handler.go` 仅一小段日志文案逻辑）
-- **Merge 策略**：benchmark 子树整体保留；若 upstream 后续自带 image loadtest，可比较后择优；`relay/image_handler.go` 若 upstream 修复同类质量标签记录问题，merge 时优先采用 upstream 实现
+- **Merge 策略**：benchmark 子树整体保留；若 upstream 后续自带 image loadtest，可比较后择优；`relay/image_handler.go` 若 upstream 修复同类质量标签记录问题，merge 时优先采用 upstream 实现。2026-06-15 同步上游图片流/图片编辑实现时，保留本条 Azure `response_format` 过滤 overlay。
 
 ### B-15 [benchmark/image] 余额不足自动停机
 - **修改文件**：
