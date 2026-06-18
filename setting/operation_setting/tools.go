@@ -145,7 +145,7 @@ func GetToolPrice(toolName string) float64 {
 }
 
 // ---------------------------------------------------------------------------
-// GPT Image 1 per-call pricing (special: depends on quality + size)
+// GPT Image per-call pricing (special: depends on quality + size)
 // ---------------------------------------------------------------------------
 
 const (
@@ -160,7 +160,26 @@ const (
 	GPTImage1High1536x1024   = 0.25
 )
 
-func GetGPTImage1PriceOnceCall(quality string, size string) float64 {
+type ImageGenerationPrice struct {
+	Price            float64
+	Quality          string
+	Size             string
+	UsedDefaultPrice bool
+}
+
+// Fy-api overlay: return both the selected price and the normalized fallback metadata for logs.
+func ResolveImageGenerationPrice(quality string, size string) ImageGenerationPrice {
+	defaultPrice := ImageGenerationPrice{
+		Price:            GPTImage1High1024x1024,
+		Quality:          "high",
+		Size:             "1024x1024",
+		UsedDefaultPrice: true,
+	}
+
+	if quality == "" || quality == "auto" {
+		return defaultPrice
+	}
+
 	prices := map[string]map[string]float64{
 		"low": {
 			"1024x1024": GPTImage1Low1024x1024,
@@ -181,11 +200,19 @@ func GetGPTImage1PriceOnceCall(quality string, size string) float64 {
 
 	if qualityMap, exists := prices[quality]; exists {
 		if price, exists := qualityMap[size]; exists {
-			return price
+			return ImageGenerationPrice{
+				Price:   price,
+				Quality: quality,
+				Size:    size,
+			}
 		}
 	}
 
-	return GPTImage1High1024x1024
+	return defaultPrice
+}
+
+func GetGPTImage1PriceOnceCall(quality string, size string) float64 {
+	return ResolveImageGenerationPrice(quality, size).Price
 }
 
 // ---------------------------------------------------------------------------

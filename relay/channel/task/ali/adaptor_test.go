@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 )
 
@@ -448,6 +449,13 @@ func TestAdjustBillingOnComplete_UsesActualAliDuration(t *testing.T) {
 					"seconds":          5,
 					"resolution-1080P": 1 / 0.6,
 				},
+				MediaBilling: map[string]any{
+					"media_billing":          true,
+					"media_modality":         "video",
+					"media_billing_mode":     "video_duration",
+					"media_duration_seconds": 5.0,
+					"media_multiplier":       5.0,
+				},
 			},
 		},
 	}
@@ -465,6 +473,82 @@ func TestAdjustBillingOnComplete_UsesActualAliDuration(t *testing.T) {
 	expectedQuota := int(float64(expectedBaseQuota) * 3 * (1 / 0.6))
 	if actualQuota != expectedQuota {
 		t.Fatalf("actualQuota = %d, want %d", actualQuota, expectedQuota)
+	}
+	if got, want := task.PrivateData.BillingContext.MediaBilling["media_duration_seconds"], 3.0; got != want {
+		t.Fatalf("media_duration_seconds = %#v, want %#v", got, want)
+	}
+	if got, want := task.PrivateData.BillingContext.MediaBilling["media_multiplier"], 3.0; got != want {
+		t.Fatalf("media_multiplier = %#v, want %#v", got, want)
+	}
+	providerUsage, ok := task.PrivateData.BillingContext.MediaBilling["media_provider_usage"].(map[string]float64)
+	if !ok {
+		t.Fatalf("media_provider_usage type = %T", task.PrivateData.BillingContext.MediaBilling["media_provider_usage"])
+	}
+	if got, want := providerUsage["duration"], 3.0; got != want {
+		t.Fatalf("provider usage duration = %#v, want %#v", got, want)
+	}
+}
+
+func TestEstimateBilling_SetsCanonicalMediaBilling(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Set("task_request", relaycommon.TaskSubmitReq{
+		Prompt:        "role video",
+		Model:         "wan2.6-r2v",
+		ReferenceURLs: []string{"https://example.com/ref.png"},
+		Size:          "1280*720",
+		Duration:      6,
+	})
+
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "wan2.6-r2v",
+		ChannelMeta: &relaycommon.ChannelMeta{
+			UpstreamModelName: "wan2.6-r2v",
+		},
+		PriceData: types.PriceData{
+			ModelRatio: 0.082,
+			GroupRatioInfo: types.GroupRatioInfo{
+				GroupRatio: 1,
+			},
+		},
+	}
+	adaptor := &TaskAdaptor{}
+
+	ratios := adaptor.EstimateBilling(c, info)
+
+	if got, want := ratios["seconds"], 6.0; got != want {
+		t.Fatalf("seconds ratio = %#v, want %#v", got, want)
+	}
+	if got, want := ratios["resolution-720P"], 1.0; got != want {
+		t.Fatalf("resolution ratio = %#v, want %#v", got, want)
+	}
+	media := info.PriceData.MediaBilling
+	if got, want := media["media_billing"], true; got != want {
+		t.Fatalf("media_billing = %#v, want %#v", got, want)
+	}
+	if got, want := media["media_modality"], "video"; got != want {
+		t.Fatalf("media_modality = %#v, want %#v", got, want)
+	}
+	if got, want := media["media_resolution_bucket"], "720p"; got != want {
+		t.Fatalf("media_resolution_bucket = %#v, want %#v", got, want)
+	}
+	if got, want := media["media_duration_seconds"], 6.0; got != want {
+		t.Fatalf("media_duration_seconds = %#v, want %#v", got, want)
+	}
+	if got, want := media["media_has_image_input"], true; got != want {
+		t.Fatalf("media_has_image_input = %#v, want %#v", got, want)
+	}
+	if got, want := media["media_reference_image_count"], 1; got != want {
+		t.Fatalf("media_reference_image_count = %#v, want %#v", got, want)
+	}
+	if got, want := media["media_unit"], "second"; got != want {
+		t.Fatalf("media_unit = %#v, want %#v", got, want)
+	}
+	if got, want := media["media_unit_price"], 0.041; got != want {
+		t.Fatalf("media_unit_price = %#v, want %#v", got, want)
 	}
 }
 

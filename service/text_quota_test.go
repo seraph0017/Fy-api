@@ -439,3 +439,35 @@ func TestComposeTieredTextQuotaErrorFallbackUsesPreConsumedQuota(t *testing.T) {
 	require.Equal(t, int64(12500), summary.ToolCallSurchargeQuota.Round(0).IntPart())
 	require.Equal(t, 14500, quota)
 }
+
+func TestCalculateTextQuotaSummaryRecordsImageGenerationFallbackMetadata(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Set("image_generation_call", true)
+	ctx.Set("image_generation_call_quality", "auto")
+	ctx.Set("image_generation_call_size", "2048x2048")
+
+	relayInfo := &relaycommon.RelayInfo{
+		OriginModelName: "gpt-4o",
+		PriceData: types.PriceData{
+			ModelRatio:      1,
+			CompletionRatio: 1,
+			GroupRatioInfo:  types.GroupRatioInfo{GroupRatio: 1},
+		},
+		StartTime: time.Now(),
+	}
+
+	usage := &dto.Usage{
+		PromptTokens:     10,
+		CompletionTokens: 10,
+		TotalTokens:      20,
+	}
+
+	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
+
+	require.True(t, summary.ImageGenerationCallDefault)
+	require.Equal(t, "high", summary.ImageGenerationCallQuality)
+	require.Equal(t, "1024x1024", summary.ImageGenerationCallSize)
+	require.InDelta(t, 0.167, summary.ImageGenerationCallPrice, 0.000001)
+}

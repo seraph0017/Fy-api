@@ -591,10 +591,12 @@ func RelayTask(c *gin.Context) {
 		task.PrivateData.SubscriptionId = relayInfo.SubscriptionId
 		task.PrivateData.TokenId = relayInfo.TokenId
 		task.PrivateData.BillingContext = &model.TaskBillingContext{
-			ModelPrice:      relayInfo.PriceData.ModelPrice,
-			GroupRatio:      relayInfo.PriceData.GroupRatioInfo.GroupRatio,
-			ModelRatio:      relayInfo.PriceData.ModelRatio,
-			OtherRatios:     relayInfo.PriceData.OtherRatios,
+			ModelPrice:  relayInfo.PriceData.ModelPrice,
+			GroupRatio:  relayInfo.PriceData.GroupRatioInfo.GroupRatio,
+			ModelRatio:  relayInfo.PriceData.ModelRatio,
+			OtherRatios: relayInfo.PriceData.OtherRatios,
+			// Fy-api overlay: persist normalized media dimensions for async settlement/refund logs.
+			MediaBilling:    relayInfo.PriceData.MediaBilling,
 			OriginModelName: relayInfo.OriginModelName,
 			PerCallBilling:  common.StringsContains(constant.TaskPricePatches, relayInfo.OriginModelName) || relayInfo.PriceData.UsePrice,
 		}

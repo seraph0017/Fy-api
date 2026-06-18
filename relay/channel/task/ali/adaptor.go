@@ -282,6 +282,149 @@ func ProcessAliOtherRatios(aliReq *AliVideoRequest) (map[string]float64, error) 
 	return otherRatios, nil
 }
 
+// Fy-api overlay: normalize Ali request/usage fields into canonical media billing log dimensions.
+func aliResolutionRaw(aliReq *AliVideoRequest) string {
+	if aliReq == nil || aliReq.Parameters == nil {
+		return ""
+	}
+	if aliReq.Parameters.Size != "" {
+		return aliReq.Parameters.Size
+	}
+	return aliReq.Parameters.Resolution
+}
+
+func aliReferenceCounts(aliReq *AliVideoRequest) (images int, videos int) {
+	if aliReq == nil {
+		return 0, 0
+	}
+	if aliReq.Input.ImgURL != "" {
+		images++
+	}
+	if aliReq.Input.FirstFrameURL != "" {
+		images++
+	}
+	if aliReq.Input.LastFrameURL != "" {
+		images++
+	}
+	for _, url := range aliReq.Input.ReferenceURLs {
+		if strings.TrimSpace(url) == "" {
+			continue
+		}
+		// wan2.6-r2v reference_urls can carry image or video references; absent
+		// explicit media type, keep them as image references for compatibility.
+		images++
+	}
+	for _, item := range aliReq.Input.Media {
+		if strings.Contains(strings.ToLower(item.Type), "video") {
+			videos++
+		} else if item.URL != "" {
+			images++
+		}
+	}
+	return images, videos
+}
+
+func aliMediaUnitPrice(info *relaycommon.RelayInfo) float64 {
+	if info == nil {
+		return 0
+	}
+	if info.PriceData.UsePrice && info.PriceData.ModelPrice > 0 {
+		return info.PriceData.ModelPrice
+	}
+	if info.PriceData.ModelRatio > 0 && info.PriceData.GroupRatioInfo.GroupRatio > 0 {
+		return info.PriceData.ModelRatio / 2 * info.PriceData.GroupRatioInfo.GroupRatio
+	}
+	return 0
+}
+
+func buildAliMediaBilling(info *relaycommon.RelayInfo, aliReq *AliVideoRequest) map[string]any {
+	if aliReq == nil || aliReq.Parameters == nil {
+		return nil
+	}
+	rawResolution := aliResolutionRaw(aliReq)
+	width, height, resolutionBucket, aspectRatio, resolutionFallbacks, resolutionWarnings := service.NormalizeMediaResolution(rawResolution)
+	imageRefs, videoRefs := aliReferenceCounts(aliReq)
+	modelName := aliReq.Model
+	upstreamModelName := aliReq.Model
+	if info != nil {
+		if info.OriginModelName != "" {
+			modelName = info.OriginModelName
+		}
+		if info.ChannelMeta != nil && info.UpstreamModelName != "" {
+			upstreamModelName = info.UpstreamModelName
+		}
+	}
+	dimensions := service.MediaBillingDimensions{
+		Modality:            service.MediaModalityVideo,
+		ModelName:           modelName,
+		UpstreamModelName:   upstreamModelName,
+		Provider:            ChannelName,
+		BillingMode:         service.MediaBillingModeVideoDuration,
+		SizeRaw:             rawResolution,
+		Width:               width,
+		Height:              height,
+		ResolutionBucket:    resolutionBucket,
+		AspectRatio:         aspectRatio,
+		DurationSeconds:     float64(aliReq.Parameters.Duration),
+		HasImageInput:       imageRefs > 0,
+		HasVideoInput:       videoRefs > 0,
+		ReferenceImageCount: imageRefs,
+		ReferenceVideoCount: videoRefs,
+		Fallbacks:           resolutionFallbacks,
+		Warnings:            resolutionWarnings,
+	}
+	return service.BuildMediaOther(dimensions, aliMediaUnitPrice(info), service.MediaUnitSecond, float64(aliReq.Parameters.Duration))
+}
+
+func mergeProviderUsageIntoMediaBilling(dst map[string]any, usage *AliUsage) map[string]any {
+	if usage == nil {
+		return dst
+	}
+	if dst == nil {
+		dst = map[string]any{
+			"media_billing":        true,
+			"media_modality":       service.MediaModalityVideo,
+			"media_billing_mode":   service.MediaBillingModeVideoDuration,
+			"media_provider":       ChannelName,
+			"media_provider_usage": map[string]float64{},
+		}
+	}
+	providerUsage := make(map[string]float64)
+	switch existing := dst["media_provider_usage"].(type) {
+	case map[string]float64:
+		for k, v := range existing {
+			providerUsage[k] = v
+		}
+	case map[string]any:
+		for k, v := range existing {
+			switch n := v.(type) {
+			case float64:
+				providerUsage[k] = n
+			case int:
+				providerUsage[k] = float64(n)
+			case int64:
+				providerUsage[k] = float64(n)
+			}
+		}
+	}
+	if usage.Duration > 0 {
+		duration := float64(usage.Duration)
+		dst["media_duration_seconds"] = duration
+		dst["media_multiplier"] = duration
+		providerUsage["duration"] = duration
+	}
+	if usage.VideoCount > 0 {
+		providerUsage["video_count"] = float64(usage.VideoCount)
+	}
+	if usage.SR > 0 {
+		providerUsage["sr"] = float64(usage.SR)
+	}
+	if len(providerUsage) > 0 {
+		dst["media_provider_usage"] = providerUsage
+	}
+	return dst
+}
+
 func validateWan26Resolution(model, resolution string) error {
 	if !strings.HasPrefix(model, "wan2.6") || isWan26R2V(model) || resolution == "" {
 		return nil
@@ -507,11 +650,13 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 	}
 	ratios, err := ProcessAliOtherRatios(aliReq)
 	if err != nil {
+		info.PriceData.SetMediaBilling(buildAliMediaBilling(info, aliReq))
 		return otherRatios
 	}
 	for k, v := range ratios {
 		otherRatios[k] = v
 	}
+	info.PriceData.SetMediaBilling(buildAliMediaBilling(info, aliReq))
 	return otherRatios
 }
 
@@ -647,6 +792,7 @@ func (a *TaskAdaptor) AdjustBillingOnComplete(task *model.Task, _ *relaycommon.T
 	if bc.ModelRatio <= 0 || bc.GroupRatio <= 0 {
 		return 0
 	}
+	bc.MediaBilling = mergeProviderUsageIntoMediaBilling(bc.MediaBilling, aliResp.Usage)
 
 	baseQuota := int(bc.ModelRatio / 2 * common.QuotaPerUnit * bc.GroupRatio)
 	actualQuota := float64(baseQuota) * float64(aliResp.Usage.Duration)

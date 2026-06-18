@@ -23,39 +23,42 @@ import (
 )
 
 type textQuotaSummary struct {
-	PromptTokens             int
-	CompletionTokens         int
-	TotalTokens              int
-	CacheTokens              int
-	CacheCreationTokens      int
-	CacheCreationTokens5m    int
-	CacheCreationTokens1h    int
-	ImageTokens              int
-	AudioTokens              int
-	ModelName                string
-	TokenName                string
-	UseTimeSeconds           int64
-	CompletionRatio          float64
-	CacheRatio               float64
-	ImageRatio               float64
-	ModelRatio               float64
-	GroupRatio               float64
-	ModelPrice               float64
-	CacheCreationRatio       float64
-	CacheCreationRatio5m     float64
-	CacheCreationRatio1h     float64
-	Quota                    int
-	IsClaudeUsageSemantic    bool
-	UsageSemantic            string
-	WebSearchPrice           float64
-	WebSearchCallCount       int
-	ClaudeWebSearchPrice     float64
-	ClaudeWebSearchCallCount int
-	FileSearchPrice          float64
-	FileSearchCallCount      int
-	AudioInputPrice          float64
-	ImageGenerationCallPrice float64
-	ToolCallSurchargeQuota   decimal.Decimal
+	PromptTokens               int
+	CompletionTokens           int
+	TotalTokens                int
+	CacheTokens                int
+	CacheCreationTokens        int
+	CacheCreationTokens5m      int
+	CacheCreationTokens1h      int
+	ImageTokens                int
+	AudioTokens                int
+	ModelName                  string
+	TokenName                  string
+	UseTimeSeconds             int64
+	CompletionRatio            float64
+	CacheRatio                 float64
+	ImageRatio                 float64
+	ModelRatio                 float64
+	GroupRatio                 float64
+	ModelPrice                 float64
+	CacheCreationRatio         float64
+	CacheCreationRatio5m       float64
+	CacheCreationRatio1h       float64
+	Quota                      int
+	IsClaudeUsageSemantic      bool
+	UsageSemantic              string
+	WebSearchPrice             float64
+	WebSearchCallCount         int
+	ClaudeWebSearchPrice       float64
+	ClaudeWebSearchCallCount   int
+	FileSearchPrice            float64
+	FileSearchCallCount        int
+	AudioInputPrice            float64
+	ImageGenerationCallPrice   float64
+	ImageGenerationCallQuality string
+	ImageGenerationCallSize    string
+	ImageGenerationCallDefault bool
+	ToolCallSurchargeQuota     decimal.Decimal
 }
 
 func cacheWriteTokensTotal(summary textQuotaSummary) int {
@@ -130,13 +133,45 @@ func calculateTextToolCallSurcharge(ctx *gin.Context, relayInfo *relaycommon.Rel
 	}
 
 	if ctx.GetBool("image_generation_call") {
-		summary.ImageGenerationCallPrice = operation_setting.GetGPTImage1PriceOnceCall(ctx.GetString("image_generation_call_quality"), ctx.GetString("image_generation_call_size"))
+		// Fy-api overlay: resolve Responses image_generation_call by quality+size and keep fallback metadata.
+		imagePricing := operation_setting.ResolveImageGenerationPrice(ctx.GetString("image_generation_call_quality"), ctx.GetString("image_generation_call_size"))
+		summary.ImageGenerationCallPrice = imagePricing.Price
+		summary.ImageGenerationCallQuality = imagePricing.Quality
+		summary.ImageGenerationCallSize = imagePricing.Size
+		summary.ImageGenerationCallDefault = imagePricing.UsedDefaultPrice
 		surcharge = surcharge.Add(decimal.NewFromFloat(summary.ImageGenerationCallPrice).
 			Mul(dGroupRatio).
 			Mul(dQuotaPerUnit))
 	}
 
 	return surcharge
+}
+
+func buildImageGenerationCallMediaOther(summary textQuotaSummary) map[string]any {
+	if summary.ImageGenerationCallPrice <= 0 {
+		return nil
+	}
+	qualityBucket, qualityFallbacks, qualityWarnings := NormalizeMediaQuality(summary.ImageGenerationCallQuality)
+	width, height, resolutionBucket, aspectRatio, resolutionFallbacks, resolutionWarnings := NormalizeMediaResolution(summary.ImageGenerationCallSize)
+	fallbacks := append(qualityFallbacks, resolutionFallbacks...)
+	if summary.ImageGenerationCallDefault {
+		fallbacks = append(fallbacks, "image_generation_call:default_price")
+	}
+	return BuildMediaOther(MediaBillingDimensions{
+		Modality:         MediaModalityImage,
+		ModelName:        summary.ModelName,
+		BillingMode:      MediaBillingModeFixedImage,
+		ImageCount:       1,
+		QualityRaw:       summary.ImageGenerationCallQuality,
+		QualityBucket:    qualityBucket,
+		SizeRaw:          summary.ImageGenerationCallSize,
+		Width:            width,
+		Height:           height,
+		ResolutionBucket: resolutionBucket,
+		AspectRatio:      aspectRatio,
+		Fallbacks:        fallbacks,
+		Warnings:         append(qualityWarnings, resolutionWarnings...),
+	}, summary.ImageGenerationCallPrice, MediaUnitImage, 1)
 }
 
 func composeTieredTextQuota(relayInfo *relaycommon.RelayInfo, summary textQuotaSummary, tieredQuota int, tieredResult *billingexpr.TieredResult) int {
@@ -429,6 +464,11 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	if summary.ImageGenerationCallPrice > 0 {
 		other["image_generation_call"] = true
 		other["image_generation_call_price"] = summary.ImageGenerationCallPrice
+		other["image_generation_call_quality"] = summary.ImageGenerationCallQuality
+		other["image_generation_call_size"] = summary.ImageGenerationCallSize
+		other["image_generation_call_default"] = summary.ImageGenerationCallDefault
+		// Fy-api overlay: image-generation tool calls share the canonical media log shape.
+		other = MergeMediaOther(other, buildImageGenerationCallMediaOther(summary))
 	}
 	if summary.CacheCreationTokens > 0 {
 		other["cache_creation_tokens"] = summary.CacheCreationTokens
@@ -458,6 +498,10 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	}
 	if tieredBillingApplied {
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
+	}
+	if len(relayInfo.PriceData.MediaBilling) > 0 {
+		// Fy-api overlay: direct image/video adapters can attach normalized media billing evidence.
+		other = MergeMediaOther(other, relayInfo.PriceData.MediaBilling)
 	}
 
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{

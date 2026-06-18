@@ -64,6 +64,10 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 			other["pipeline_provider_cost_estimate"] = true
 		}
 	}
+	if len(info.PriceData.MediaBilling) > 0 {
+		// Fy-api overlay: keep normalized media billing dimensions structured in task logs.
+		other = MergeMediaOther(other, info.PriceData.MediaBilling)
+	}
 	model.RecordConsumeLog(c, info.UserId, model.RecordConsumeLogParams{
 		ChannelId: info.ChannelId,
 		ModelName: info.OriginModelName,
@@ -133,6 +137,8 @@ func taskAdjustTokenQuota(ctx context.Context, task *model.Task, delta int) {
 // taskBillingOther 从 task 的 BillingContext 构建日志 Other 字段。
 func taskBillingOther(task *model.Task) map[string]interface{} {
 	other := make(map[string]interface{})
+	// Fy-api overlay: settlement/refund logs are task-shaped too, so e2e/reporting can find them.
+	other["is_task"] = true
 	if bc := task.PrivateData.BillingContext; bc != nil {
 		other["model_price"] = bc.ModelPrice
 		if bc.ModelRatio > 0 {
@@ -143,6 +149,10 @@ func taskBillingOther(task *model.Task) map[string]interface{} {
 			for k, v := range bc.OtherRatios {
 				other[k] = v
 			}
+		}
+		if len(bc.MediaBilling) > 0 {
+			// Fy-api overlay: carry media billing dimensions into refund/delta logs.
+			other = MergeMediaOther(other, bc.MediaBilling)
 		}
 	}
 	props := task.Properties
