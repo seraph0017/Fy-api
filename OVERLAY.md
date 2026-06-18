@@ -369,6 +369,15 @@
 - **冲突风险**：HIGH（log.go 是上游高活跃区；overlay 集中在 helper 函数，注释打满）
 - **Feature flag**：`overlay.outbox_tx_enabled` + `overlay.outbox_mode`（off / shadow / enabled）
 
+### B-23.1 [channel] channels.group 扩容到 varchar(255)
+- **修改文件**：
+  - `model/channel.go`（`Channel.Group` 从 `varchar(64)` 调整到 `varchar(255)`）
+  - `model/main.go`（新增 `migrateChannelGroupToVarchar255()`，启动迁移时显式扩容已有 `channels.group` 列）
+- **背景**：渠道编辑页支持多选分组，前端保存时会把分组列表拼成逗号分隔字符串写入 `channels.group`。原 `varchar(64)` 在分组较多或分组名较长时会触发 MySQL `Error 1406 (22001): Data too long for column 'group'`
+- **行为**：新部署在 MySQL/PostgreSQL 上启动时会自动把 `channels.group` 扩到 `varchar(255)`；SQLite 无需额外迁移
+- **冲突风险**：低（`Channel` 模型字段宽度调整 + 独立迁移函数）
+- **Merge 策略**：若 upstream 后续也调整 `channels.group` 类型，优先采用上游实现；否则保留本迁移，避免 SG/CN 老库 schema 偏小
+
 ### B-24 [tnbiz] Outbox publisher (Aliyun MNS, shadow + enabled)
 - **新增文件**：
   - `service/outbox/runner.go`（Publisher interface + NoopPublisher + Runner with batch/lease/interval；shadow 模式下 publisher inject NoopPublisher，仅 simulate；MNS SDK 接入留 Phase 2A）
