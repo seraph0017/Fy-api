@@ -5,8 +5,9 @@ A small toolkit for **measuring Fy-api channels** along five orthogonal axes. Th
 ```
 channel-benchmark/
 ├── go/                Smoke tester. Single binary, zero deps. Run on prod.
-├── py/                Five CLIs sharing one venv:
+├── py/                Python CLIs sharing one venv:
 │   ├── fy-loadtest     Concurrency-ramp load testing
+│   ├── fy-poc-loadtest Customer POC template load testing
 │   ├── fy-quality      Quality scorecard (multi-grader, dual LLM judge)
 │   ├── fy-canary       Model-substitution / drift detection
 │   ├── fy-conformance  Protocol-conformance assertions (4xx vs 5xx, leak checks)
@@ -24,6 +25,7 @@ Everything talks to Fy-api over the OpenAI-compatible `/v1/chat/completions` pat
 |---|---|---|
 | "Are these channels even alive right now? Who's slow?" | **`go/`** | Zero-dep binary, can run on any prod box, hits real relay path so it sees TTFT + usage (unlike the built-in 测试 button which only returns `{success, time}`). |
 | "Will this channel survive 50 concurrent users?" | **`fy-loadtest`** | 1→N concurrency ramp, full E2E/TTFT/ITL/TPOT percentile suite, goodput-vs-SLO. |
+| "Customer wants the POC template report with short/medium/long text and fixed 1→256 concurrency steps." | **`fy-poc-loadtest`** | Implements the `bugs/POC压测方法.docx` request counts and exports a Markdown report shaped like `bugs/报告模板.docx`. |
 | "Is this channel actually answering correctly?" | **`fy-quality`** | Golden JSONL + 7 graders (exact / regex / contains / json_schema / rubric / similarity / pairwise) + dual-judge to cut false positives. |
 | "Has this channel been silently swapped to a cheaper model?" | **`fy-canary`** | Records a trusted baseline against the vendor API directly, then audits the gateway for divergence via alignment-template / embedding-drift / MMD. |
 | "Does the gateway return 4xx (not 5xx) for client errors, and not leak Go internals?" | **`fy-conformance`** | 94+ deterministic assertions on parameter-validation, malformed-JSON, auth, and field-presence cases. Locks in HTTP-semantics regressions like the `cannot unmarshal ... GeneralOpenAIRequest.max_tokens` leak fixed in 2026-05. |
@@ -114,6 +116,7 @@ uv pip install --python .venv/bin/python -e ".[canary]"  # adds MMD (torch, ~1.5
 source .venv/bin/activate
 
 fy-loadtest -c loadtest.yaml
+fy-poc-loadtest -c poc-loadtest.yaml
 fy-quality  -c quality.yaml
 fy-canary   baseline         -c canary.yaml   # record trusted baseline
 fy-canary   audit            -c canary.yaml   # refuse if baseline > 30d

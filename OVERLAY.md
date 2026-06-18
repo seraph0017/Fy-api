@@ -96,6 +96,7 @@
     - `fy_image_conformance/` —— 图片协议一致性 + 质量 + 安全（六阶段：探针→冒烟→API兼容→输出验证→Phase A/B 质量→安全）
     - `fy_image_canary/` —— 图片金丝雀真实性检测（5A vendor 对比 + 5B 指纹/跨渠道/能力边界）
     - `fy_score/` —— 统一评分器（五维度加权，文本/图片不同权重，产出 scorecard）
+    - `fy_poc_loadtest/` —— 按 `bugs/POC压测方法.docx` / `bugs/报告模板.docx` 口径输出客户 POC 压测报告（三场景：23/1k/7k tokens；并发 1/10/20/30/40/50/64/80/128/256；指标 TTFT/Latency/TPOT/tokens/s/成功率）
     - `seedance_gateway_vs_volcengine.py` —— Seedance 2.0 网关 vs 火山直连对照脚本，用于排查上游内容安全和网关转换差异
     - `tests/` + `tests_quality/` + `tests_canary/` + `tests_image_canary/` —— 102 个 e2e 测试
   - `docs/seedance-real-person-video-support-plan.md` —— 基于 DJLine 可信素材链路整理的 SD2.0 真人视频支持方案
