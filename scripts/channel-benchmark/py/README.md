@@ -1,10 +1,11 @@
 # Fy-api channel QA — Python tools
 
-Three Python tools sharing one package, one venv, one JSONL schema:
+Python tools sharing one package, one venv, one JSONL schema:
 
 | Tool | Command | Purpose |
 |---|---|---|
 | `fy_loadtest` | `fy-loadtest` | Concurrency-ramp load testing. Hits one channel at 1→N in-flight and reports latency/throughput per level. |
+| `fy_poc_loadtest` | `fy-poc-loadtest` | POC-style LLM performance validation based on `bugs/POC压测方法.docx`: short/medium/long input scenarios across 1/10/20/30/40/50/64/80/128/256 concurrency, with report-template fields. |
 | `fy_quality`  | `fy-quality`  | Quality scorecard. Runs a golden JSONL suite against N channels, grades each output (exact / regex / contains / json-schema / LLM-rubric / similarity / pairwise), emits a scoring matrix. |
 | `fy_canary`   | `fy-canary`   | Model-substitution detection. Records a trusted baseline, then audits a suspect channel for divergence via alignment-template similarity, embedding drift, and (optional) MMD two-sample test. |
 
@@ -36,6 +37,27 @@ fy-loadtest -c loadtest.yaml --dry-run
 
 Outputs JSON, CSV, and markdown summary per concurrency level.
 Metrics: E2E / TTFT / ITL / TPOT percentiles, RPS, aggregate tok/s, goodput vs SLO.
+
+## fy-poc-loadtest — POC report-template performance validation
+
+This runner follows the customer-supplied templates in `bugs/`:
+
+- scenarios: 短文本（23 tokens）、中文本（1k tokens）、长文本（7k tokens）
+- concurrency: `1,10,20,30,40,50,64,80,128,256`
+- default request counts: `1=>50`, `10=>100`, `20/30/40=>200`, `50/64=>250`, `80=>300`, `128=>350`, else `500`
+- metrics: TTFT, Latency, TPOT, tokens/s, request success rate
+- reports: JSON, CSV, and Markdown structured like `bugs/报告模板.docx`
+
+```bash
+export FY_API_URL=https://api-test.tracenex.cn
+export FY_API_USER_TOKEN=sk-...
+
+fy-poc-loadtest -c poc-loadtest.yaml
+fy-poc-loadtest -c poc-loadtest.yaml --model deepseek-r1 --concurrencies 1,10,20
+fy-poc-loadtest -c poc-loadtest.yaml --dry-run
+```
+
+Before a real customer run, copy `poc-loadtest.yaml` to a local file and replace the medium/long scenario prompts with customer-approved 1k/7k token samples. Keep private datasets out of git.
 
 ## fy-quality — quality scorecard
 
