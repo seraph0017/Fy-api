@@ -62,10 +62,12 @@ type AliEmbeddingResponse struct {
 	AliError
 }
 
+// Fy-api overlay: Ali error payloads can emit numeric codes in production.
+// Use the flexible string wrapper so provider-side errors still parse cleanly.
 type AliError struct {
-	Code      string `json:"code"`
-	Message   string `json:"message"`
-	RequestId string `json:"request_id"`
+	Code      dto.StringValue `json:"code"`
+	Message   string          `json:"message"`
+	RequestId string          `json:"request_id"`
 }
 
 type AliUsage struct {
@@ -76,20 +78,20 @@ type AliUsage struct {
 }
 
 type TaskResult struct {
-	B64Image string `json:"b64_image,omitempty"`
-	Url      string `json:"url,omitempty"`
-	Code     string `json:"code,omitempty"`
-	Message  string `json:"message,omitempty"`
+	B64Image string          `json:"b64_image,omitempty"`
+	Url      string          `json:"url,omitempty"`
+	Code     dto.StringValue `json:"code,omitempty"`
+	Message  string          `json:"message,omitempty"`
 }
 
 type AliOutput struct {
-	TaskId       string       `json:"task_id,omitempty"`
-	TaskStatus   string       `json:"task_status,omitempty"`
-	Text         string       `json:"text"`
-	FinishReason string       `json:"finish_reason"`
-	Message      string       `json:"message,omitempty"`
-	Code         string       `json:"code,omitempty"`
-	Results      []TaskResult `json:"results,omitempty"`
+	TaskId       string          `json:"task_id,omitempty"`
+	TaskStatus   string          `json:"task_status,omitempty"`
+	Text         string          `json:"text"`
+	FinishReason string          `json:"finish_reason"`
+	Message      string          `json:"message,omitempty"`
+	Code         dto.StringValue `json:"code,omitempty"`
+	Results      []TaskResult    `json:"results,omitempty"`
 	Choices      []struct {
 		FinishReason string `json:"finish_reason,omitempty"`
 		Message      struct {

@@ -146,6 +146,19 @@
 - **冲突风险**：中（`model_ratio.go` 和 `ModelPricingTable.jsx` 都是上游常改文件；`adaptor.go` 未来若继续扩充 Ali metadata 映射也可能冲突；`relay_info.go` 新增字段不影响上游已有字段）
 - **Merge 策略**：上游若调整视频计费展示或 Ali adaptor，保留这组 `wan2.6` 固定价格规则；`wan2.6-r2v*` 必须使用 `input.reference_urls`，`wan2.7-r2v*` 才使用 `input.media`；不得回退到 `first_frame_url`/`last_frame_url`
 
+### B-10a [ali] 数值型错误码兼容
+- **修改文件**：
+  - `relay/channel/ali/dto.go`（`AliError` / `AliOutput` / `TaskResult` 的 `code` 改为 `dto.StringValue`，兼容 DashScope 错误响应把 `code` 返回为数字）
+  - `relay/channel/ali/image.go`（图片任务失败路径显式把兼容后的 `code` 转回字符串写入 OpenAI error）
+  - `relay/channel/ali/rerank.go`（rerank 错误路径显式把兼容后的 `code` 转回字符串写入 OpenAI error）
+  - `relay/channel/task/ali/adaptor.go`（视频任务错误路径的顶层/输出层 `code` 改为 `dto.StringValue`，返回 OpenAI video error 时显式转字符串）
+- **新增测试**：
+  - `relay/channel/ali/dto_test.go`（覆盖 Ali 通用响应 `code` / `output.code` / `results[].code` 为数字时的解析）
+  - `relay/channel/task/ali/adaptor_test.go::TestAliVideoResponseAcceptsNumericErrorCode`（覆盖 Ali 视频任务顶层/输出层 `code` 为数字时的解析）
+- **背景**：生产错误日志中确认阿里部分失败响应会把 `code` 返回为数字；旧 DTO 固定声明为 `string` 时会在错误路径反序列化失败，导致真实供应商错误无法继续透传和归类
+- **冲突风险**：低（仅收敛在 Ali provider 错误 DTO 和错误返回路径）
+- **Merge 策略**：上游若后续也把 Ali `code` 字段改成可兼容字符串/数字的类型，直接沿用上游实现；否则保留这里的 `dto.StringValue` 兼容层
+
 ### B-11 [relay] 请求体反序列化失误：500 → 400 + Go 字段名脱敏
 - **新增文件**：
   - `common/json_error_sanitizer.go`（`SanitizeJSONUnmarshalError`：把 stdlib `*json.UnmarshalTypeError` / `*json.SyntaxError` / 字符串型 wrapped 错误转成用户安全格式 `invalid type for field "X": expected <json type>, got <json type>`，去掉 Go 结构体路径）

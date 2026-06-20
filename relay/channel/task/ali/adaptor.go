@@ -68,25 +68,25 @@ type AliVideoParameters struct {
 
 // AliVideoResponse 阿里通义万相响应
 type AliVideoResponse struct {
-	Output    AliVideoOutput `json:"output"`
-	RequestID string         `json:"request_id"`
-	Code      string         `json:"code,omitempty"`
-	Message   string         `json:"message,omitempty"`
-	Usage     *AliUsage      `json:"usage,omitempty"`
+	Output    AliVideoOutput  `json:"output"`
+	RequestID string          `json:"request_id"`
+	Code      dto.StringValue `json:"code,omitempty"`
+	Message   string          `json:"message,omitempty"`
+	Usage     *AliUsage       `json:"usage,omitempty"`
 }
 
 // AliVideoOutput 输出信息
 type AliVideoOutput struct {
-	TaskID        string `json:"task_id"`
-	TaskStatus    string `json:"task_status"`
-	SubmitTime    string `json:"submit_time,omitempty"`
-	ScheduledTime string `json:"scheduled_time,omitempty"`
-	EndTime       string `json:"end_time,omitempty"`
-	OrigPrompt    string `json:"orig_prompt,omitempty"`
-	ActualPrompt  string `json:"actual_prompt,omitempty"`
-	VideoURL      string `json:"video_url,omitempty"`
-	Code          string `json:"code,omitempty"`
-	Message       string `json:"message,omitempty"`
+	TaskID        string          `json:"task_id"`
+	TaskStatus    string          `json:"task_status"`
+	SubmitTime    string          `json:"submit_time,omitempty"`
+	ScheduledTime string          `json:"scheduled_time,omitempty"`
+	EndTime       string          `json:"end_time,omitempty"`
+	OrigPrompt    string          `json:"orig_prompt,omitempty"`
+	ActualPrompt  string          `json:"actual_prompt,omitempty"`
+	VideoURL      string          `json:"video_url,omitempty"`
+	Code          dto.StringValue `json:"code,omitempty"`
+	Message       string          `json:"message,omitempty"`
 }
 
 // AliUsage 使用统计
@@ -679,12 +679,12 @@ func (a *TaskAdaptor) ConvertToOpenAIVideo(task *model.Task) ([]byte, error) {
 	// 错误处理
 	if aliResp.Code != "" {
 		openAIResp.Error = &dto.OpenAIVideoError{
-			Code:    aliResp.Code,
+			Code:    string(aliResp.Code),
 			Message: aliResp.Message,
 		}
 	} else if aliResp.Output.Code != "" {
 		openAIResp.Error = &dto.OpenAIVideoError{
-			Code:    aliResp.Output.Code,
+			Code:    string(aliResp.Output.Code),
 			Message: aliResp.Output.Message,
 		}
 	}
