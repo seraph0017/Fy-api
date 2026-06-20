@@ -222,6 +222,15 @@
   - `cli.py` / `config.py` / `client.py` / `probe.py` / `budget.py` / `report.py`
   - `suites/api_compat.py` / `output_valid.py` / `prompt_follow.py` / `perf.py` / `safety.py`
   - 命令：`fy-image-conformance`
+
+### B-16 [deepseek] DeepSeek V4 `-nothink` / `-nothinking` 别名兼容
+- **修改文件**：
+  - `setting/reasoning/suffix.go`（`// Fy-api overlay:`：在 DeepSeek V4 既有 `-none` / `-max` 之外，兼容客户端常用的 `-nothink` / `-nothinking`，统一映射到 `thinking.type=disabled`）
+  - `relay/channel/deepseek/constants.go`（对外模型列表补充 `deepseek-v4-pro-nothink` / `deepseek-v4-flash-nothink`，保留既有 `-none` 兼容名）
+  - `setting/reasoning/suffix_test.go`、`relay/channel/deepseek/adaptor_test.go`（补别名解析与 OpenAI/Claude 适配回归测试）
+- **背景**：CN 环境客户通过 CC Switch 使用 DeepSeek V4 时，更自然会写 `deepseek-v4-pro-nothink` / `deepseek-v4-flash-nothink`。当前仓库只识别 `-none`，导致 nothink 请求不会命中 DeepSeek V4 thinking 适配层。这里在网关侧补别名兼容，同时把对外模型名补齐到产品约定。
+- **冲突风险**：低（仅 suffix 解析、模型常量与独立测试）
+- **Merge 策略**：若 upstream 后续为 DeepSeek V4 增加 no-thinking 官方别名，优先采用 upstream；否则保留 alias 兼容层与 `-nothink` 展示名
   - 用途：图片渠道六阶段测试（探针 → 冒烟 → API 兼容 → 输出验证 → 内容质量 Phase A/B → 安全抽样），单命令产出结构化 JSON + markdown 报告
 - **新增测试**：`scripts/channel-benchmark/py/tests/test_image_conformance_json.py`、`scripts/channel-benchmark/py/tests/test_phase2_phase3.py`
 - **修改文件**：`scripts/channel-benchmark/py/pyproject.toml`（注册 `fy-image-conformance` CLI）
