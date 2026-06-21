@@ -181,6 +181,44 @@ func TestDeepSeekConvertResponsesRequestUsesOpenAIChatBridge(t *testing.T) {
 	require.Equal(t, "disabled", thinking["type"])
 }
 
+func TestDeepSeekConvertResponsesRequestFlattensNamespaceTools(t *testing.T) {
+	t.Parallel()
+
+	req := dto.OpenAIResponsesRequest{
+		Model: "deepseek-v4-pro-nothink",
+		Input: common.StringToByteSlice(`"hello"`),
+		Tools: common.StringToByteSlice(`[
+			{
+				"type":"namespace",
+				"name":"mcp__calendar",
+				"description":"Calendar tools.",
+				"tools":[
+					{
+						"type":"function",
+						"name":"create_event",
+						"description":"Create an event",
+						"parameters":{"type":"object","properties":{"title":{"type":"string"}}}
+					}
+				]
+			}
+		]`),
+		ToolChoice: common.StringToByteSlice(`{"type":"function","namespace":"mcp__calendar","name":"create_event"}`),
+	}
+
+	chatReq, err := deepSeekResponsesToChatCompletionsRequest(req)
+	require.NoError(t, err)
+	require.Len(t, chatReq.Tools, 1)
+	require.Equal(t, "function", chatReq.Tools[0].Type)
+	require.Equal(t, "mcp__calendar___create_event", chatReq.Tools[0].Function.Name)
+	require.Equal(t, "Create an event", chatReq.Tools[0].Function.Description)
+	require.Equal(t, map[string]any{
+		"type": "function",
+		"function": map[string]any{
+			"name": "mcp__calendar___create_event",
+		},
+	}, chatReq.ToolChoice)
+}
+
 func TestDeepSeekResponsesBridgeRejectsUnsupportedStatefulFeatures(t *testing.T) {
 	t.Parallel()
 
@@ -296,6 +334,38 @@ func TestDeepSeekChatCompletionsToolCallToResponsesResponse(t *testing.T) {
 	err := common.Unmarshal(resp.Output[0].Arguments, &arguments)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"cmd":"pwd"}`, arguments)
+}
+
+func TestDeepSeekChatCompletionsNamespacedToolCallToResponsesResponse(t *testing.T) {
+	t.Parallel()
+
+	message := dto.Message{Role: "assistant"}
+	message.SetToolCalls([]dto.ToolCallRequest{
+		{
+			ID:   "call_123",
+			Type: "function",
+			Function: dto.FunctionRequest{
+				Name:      "mcp__calendar___create_event",
+				Arguments: `{"title":"standup"}`,
+			},
+		},
+	})
+	resp := deepSeekChatCompletionsToResponsesResponse(dto.OpenAITextResponse{
+		Id:    "chatcmpl_123",
+		Model: "deepseek-v4-pro",
+		Choices: []dto.OpenAITextResponseChoice{
+			{
+				Index:        0,
+				Message:      message,
+				FinishReason: "tool_calls",
+			},
+		},
+	})
+
+	require.Len(t, resp.Output, 1)
+	require.Equal(t, "function_call", resp.Output[0].Type)
+	require.Equal(t, "mcp__calendar", resp.Output[0].Namespace)
+	require.Equal(t, "create_event", resp.Output[0].Name)
 }
 
 func TestDeepSeekResponsesStreamStateAccumulatesToolCalls(t *testing.T) {

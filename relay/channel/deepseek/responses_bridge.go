@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -17,6 +18,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+var deepSeekResponsesUnsafeFunctionNameChars = regexp.MustCompile(`[^A-Za-z0-9_-]+`)
+
+const deepSeekResponsesNamespaceToolDelimiter = "___"
 
 // Fy-api overlay: bridge OpenAI Responses clients to DeepSeek upstreams that
 // only implement OpenAI-compatible chat/completions.
@@ -125,24 +130,93 @@ func deepSeekResponsesToolsToChatTools(raw []byte) ([]dto.ToolCallRequest, error
 	chatTools := make([]dto.ToolCallRequest, 0, len(tools))
 	for _, tool := range tools {
 		toolType, _ := tool["type"].(string)
-		if toolType != "function" {
+		switch toolType {
+		case "function":
+			chatTool, err := deepSeekResponsesFunctionToolToChatTool("", tool)
+			if err != nil {
+				return nil, err
+			}
+			chatTools = append(chatTools, chatTool)
+		case "namespace":
+			namespaceTools, err := deepSeekResponsesNamespaceToolToChatTools(tool)
+			if err != nil {
+				return nil, err
+			}
+			chatTools = append(chatTools, namespaceTools...)
+		default:
 			return nil, fmt.Errorf("deepseek responses-to-chat bridge does not support tool type %s", toolType)
 		}
-		name, _ := tool["name"].(string)
-		if strings.TrimSpace(name) == "" {
-			return nil, errors.New("deepseek responses-to-chat bridge requires function tool name")
-		}
-		description, _ := tool["description"].(string)
-		chatTools = append(chatTools, dto.ToolCallRequest{
-			Type: "function",
-			Function: dto.FunctionRequest{
-				Name:        name,
-				Description: description,
-				Parameters:  tool["parameters"],
-			},
-		})
 	}
 	return chatTools, nil
+}
+
+func deepSeekResponsesNamespaceToolToChatTools(tool map[string]any) ([]dto.ToolCallRequest, error) {
+	namespace, _ := tool["name"].(string)
+	namespace = strings.TrimSpace(namespace)
+	if namespace == "" {
+		return nil, errors.New("deepseek responses-to-chat bridge requires namespace tool name")
+	}
+	rawTools, ok := tool["tools"].([]any)
+	if !ok {
+		return nil, errors.New("deepseek responses-to-chat bridge requires namespace tools")
+	}
+	chatTools := make([]dto.ToolCallRequest, 0, len(rawTools))
+	for _, rawTool := range rawTools {
+		namespaceTool, ok := rawTool.(map[string]any)
+		if !ok {
+			return nil, errors.New("deepseek responses-to-chat bridge requires namespace tool objects")
+		}
+		toolType, _ := namespaceTool["type"].(string)
+		if toolType != "function" {
+			return nil, fmt.Errorf("deepseek responses-to-chat bridge does not support namespace tool type %s", toolType)
+		}
+		chatTool, err := deepSeekResponsesFunctionToolToChatTool(namespace, namespaceTool)
+		if err != nil {
+			return nil, err
+		}
+		chatTools = append(chatTools, chatTool)
+	}
+	return chatTools, nil
+}
+
+func deepSeekResponsesFunctionToolToChatTool(namespace string, tool map[string]any) (dto.ToolCallRequest, error) {
+	name, _ := tool["name"].(string)
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return dto.ToolCallRequest{}, errors.New("deepseek responses-to-chat bridge requires function tool name")
+	}
+	description, _ := tool["description"].(string)
+	if namespace != "" {
+		name = deepSeekResponsesNamespacedToolName(namespace, name)
+	}
+	return dto.ToolCallRequest{
+		Type: "function",
+		Function: dto.FunctionRequest{
+			Name:        name,
+			Description: description,
+			Parameters:  tool["parameters"],
+		},
+	}, nil
+}
+
+func deepSeekResponsesNamespacedToolName(namespace, name string) string {
+	namespace = strings.Trim(deepSeekResponsesUnsafeFunctionNameChars.ReplaceAllString(namespace, "_"), "_")
+	name = strings.Trim(deepSeekResponsesUnsafeFunctionNameChars.ReplaceAllString(name, "_"), "_")
+	if namespace == "" {
+		return name
+	}
+	if name == "" {
+		return namespace
+	}
+	return namespace + deepSeekResponsesNamespaceToolDelimiter + name
+}
+
+func deepSeekResponsesSplitNamespacedToolName(name string) (string, string) {
+	namespace, toolName, ok := strings.Cut(name, deepSeekResponsesNamespaceToolDelimiter)
+	if !ok || strings.TrimSpace(namespace) == "" || strings.TrimSpace(toolName) == "" {
+		return "", name
+	}
+	return namespace, toolName
 }
 
 func deepSeekResponsesToolChoiceToChatToolChoice(raw []byte) (any, error) {
@@ -165,6 +239,9 @@ func deepSeekResponsesToolChoiceToChatToolChoice(raw []byte) (any, error) {
 			name, _ := choice["name"].(string)
 			if strings.TrimSpace(name) == "" {
 				return nil, errors.New("deepseek responses-to-chat bridge requires function tool_choice name")
+			}
+			if namespace, _ := choice["namespace"].(string); strings.TrimSpace(namespace) != "" {
+				name = deepSeekResponsesNamespacedToolName(namespace, name)
 			}
 			return map[string]any{
 				"type": "function",
@@ -377,6 +454,7 @@ type deepSeekResponsesStreamToolCall struct {
 	Index     int
 	ID        string
 	CallID    string
+	Namespace string
 	Name      string
 	Arguments strings.Builder
 }
@@ -485,7 +563,7 @@ func (s *deepSeekResponsesStreamState) HandleToolCallDeltas(c *gin.Context, tool
 			stateToolCall.CallID = toolCall.ID
 		}
 		if toolCall.Function.Name != "" {
-			stateToolCall.Name = toolCall.Function.Name
+			stateToolCall.Namespace, stateToolCall.Name = deepSeekResponsesSplitNamespacedToolName(toolCall.Function.Name)
 		}
 		if toolCall.Function.Arguments != "" {
 			stateToolCall.Arguments.WriteString(toolCall.Function.Arguments)
@@ -511,7 +589,7 @@ func (s *deepSeekResponsesStreamState) CompletedResponse(usage dto.Usage) dto.Op
 				ID:   toolCall.CallID,
 				Type: "function",
 				Function: dto.FunctionRequest{
-					Name:      toolCall.Name,
+					Name:      deepSeekResponsesNamespacedToolName(toolCall.Namespace, toolCall.Name),
 					Arguments: toolCall.Arguments.String(),
 				},
 			})
@@ -603,12 +681,14 @@ func deepSeekChatCompletionsToResponsesResponse(chatResponse dto.OpenAITextRespo
 				callID = fmt.Sprintf("call_%s_%d", chatResponse.Id, choice.Index)
 			}
 			arguments, _ := common.Marshal(toolCall.Function.Arguments)
+			namespace, name := deepSeekResponsesSplitNamespacedToolName(toolCall.Function.Name)
 			output = append(output, dto.ResponsesOutput{
 				Type:      "function_call",
 				ID:        callID,
 				Status:    "completed",
 				CallId:    callID,
-				Name:      toolCall.Function.Name,
+				Name:      name,
+				Namespace: namespace,
 				Arguments: arguments,
 			})
 		}
