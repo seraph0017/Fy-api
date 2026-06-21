@@ -83,6 +83,26 @@ func TestApplyDeepSeekV4ClaudeThinkingSuffix(t *testing.T) {
 	require.Nil(t, request.OutputConfig)
 }
 
+func TestNormalizeDeepSeekOpenAIRequestForUpstream(t *testing.T) {
+	t.Parallel()
+
+	request := &dto.GeneralOpenAIRequest{
+		Messages: []dto.Message{
+			{Role: "developer"},
+			{Role: "latest_reminder"},
+			{Role: "unknown_role"},
+			{Role: ""},
+		},
+	}
+
+	normalizeDeepSeekOpenAIRequestForUpstream(request)
+
+	require.Equal(t, "system", request.Messages[0].Role)
+	require.Equal(t, "latest_reminder", request.Messages[1].Role)
+	require.Equal(t, "user", request.Messages[2].Role)
+	require.Equal(t, "user", request.Messages[3].Role)
+}
+
 func TestDeepSeekConvertClaudeRequestUsesOpenAIChatBridge(t *testing.T) {
 	t.Parallel()
 
@@ -179,6 +199,39 @@ func TestDeepSeekConvertResponsesRequestUsesOpenAIChatBridge(t *testing.T) {
 	err = common.Unmarshal(chatReq.THINKING, &thinking)
 	require.NoError(t, err)
 	require.Equal(t, "disabled", thinking["type"])
+}
+
+func TestDeepSeekConvertResponsesRequestNormalizesUnsupportedRoles(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	info := &relaycommon.RelayInfo{
+		RelayMode:   constant.RelayModeResponses,
+		RelayFormat: types.RelayFormatOpenAIResponses,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			UpstreamModelName: "deepseek-v4-pro-nothink",
+		},
+	}
+	req := dto.OpenAIResponsesRequest{
+		Model: "deepseek-v4-pro-nothink",
+		Input: common.StringToByteSlice(`[
+			{"type":"message","role":"developer","content":[{"type":"input_text","text":"follow project rules"}]},
+			{"type":"message","role":"unknown_role","content":"fallback to user"},
+			{"type":"message","role":"latest_reminder","content":"keep concise"}
+		]`),
+	}
+
+	converted, err := (&Adaptor{}).ConvertOpenAIResponsesRequest(ctx, info, req)
+	require.NoError(t, err)
+	chatReq, ok := converted.(*dto.GeneralOpenAIRequest)
+	require.True(t, ok)
+	require.Len(t, chatReq.Messages, 3)
+	require.Equal(t, "system", chatReq.Messages[0].Role)
+	require.Equal(t, "user", chatReq.Messages[1].Role)
+	require.Equal(t, "latest_reminder", chatReq.Messages[2].Role)
 }
 
 func TestDeepSeekConvertResponsesRequestFlattensNamespaceTools(t *testing.T) {
@@ -298,6 +351,33 @@ func TestDeepSeekResponsesFunctionCallOutputToChatToolMessage(t *testing.T) {
 	require.Equal(t, "tool", chatReq.Messages[1].Role)
 	require.Equal(t, "call_123", chatReq.Messages[1].ToolCallId)
 	require.JSONEq(t, `{"pwd":"/tmp"}`, chatReq.Messages[1].StringContent())
+}
+
+func TestDeepSeekResponsesFunctionCallHistoryToChatAssistantMessage(t *testing.T) {
+	t.Parallel()
+
+	req := dto.OpenAIResponsesRequest{
+		Model: "deepseek-v4-pro-nothink",
+		Input: common.StringToByteSlice(`[
+			{"type":"message","role":"user","content":"run pwd"},
+			{"type":"function_call","call_id":"call_123","name":"shell","arguments":"{\"cmd\":\"pwd\"}"},
+			{"type":"function_call_output","call_id":"call_123","output":"{\"pwd\":\"/tmp\"}"},
+			{"type":"reasoning","summary":[{"type":"summary_text","text":"irrelevant hidden state"}]}
+		]`),
+	}
+
+	chatReq, err := deepSeekResponsesToChatCompletionsRequest(req)
+	require.NoError(t, err)
+	require.Len(t, chatReq.Messages, 3)
+	require.Equal(t, "assistant", chatReq.Messages[1].Role)
+	require.Equal(t, "", chatReq.Messages[1].StringContent())
+	toolCalls := chatReq.Messages[1].ParseToolCalls()
+	require.Len(t, toolCalls, 1)
+	require.Equal(t, "call_123", toolCalls[0].ID)
+	require.Equal(t, "shell", toolCalls[0].Function.Name)
+	require.JSONEq(t, `{"cmd":"pwd"}`, toolCalls[0].Function.Arguments)
+	require.Equal(t, "tool", chatReq.Messages[2].Role)
+	require.Equal(t, "call_123", chatReq.Messages[2].ToolCallId)
 }
 
 func TestDeepSeekChatCompletionsToResponsesResponse(t *testing.T) {
