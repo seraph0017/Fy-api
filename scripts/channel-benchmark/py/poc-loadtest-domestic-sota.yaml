@@ -1,0 +1,118 @@
+# Domestic SOTA POC load test.
+# Customer request:
+#   models: MiniMax-M2.7, kimi-k2.6, deepseek-v4-pro, glm-5.1
+#   concurrency: 1, 20, 80, 200
+#   scenarios: short text (23 tokens), long text (7K)
+#
+# Note:
+#   Short text has been confirmed as 23 tokens.
+#
+# Keep secrets in env vars:
+#   export FY_API_URL=https://api-test.tracenex.cn
+#   export FY_API_USER_TOKEN=sk-...
+#
+# Run:
+#   cd scripts/channel-benchmark/py/fy_poc_loadtest
+#   make dry-run CONFIG=poc-loadtest-domestic-sota.yaml
+#   make run CONFIG=poc-loadtest-domestic-sota.yaml
+
+gateway:
+  base_url: ${FY_API_URL:-http://localhost:3000}
+  user_token: ${FY_API_USER_TOKEN}
+  # Optional admin-channel pin. Requires an admin user's sk token.
+  # channels:
+  #   - name: domestic-sota-channel
+  #     pin_channel_id: 42
+
+poc:
+  platform_name: TraceNex
+  report_title: 国产 SOTA 模型简单压测报告
+  report_id: domestic-sota-poc
+  test_scope: MiniMax-M2.7 / kimi-k2.6 / deepseek-v4-pro / glm-5.1 在并发 1、20、80、200 下的 23 tokens 短文本和 7K tokens 长文本性能测试
+
+  models:
+    - MiniMax-M2.7
+    - kimi-k2.6
+    - deepseek-v4-pro
+    - glm-5.1
+
+  concurrency_levels: [1, 20, 80, 200]
+
+  # 30 RMB total budget mode:
+  # - Keep the customer-requested 1/20/80/200 concurrency coverage for the
+  #   cheap 23-token short scenario.
+  # - Keep long-context as C=1 baseline only. True 20/80/200 concurrency for
+  #   7K input requires at least 20/80/200 long requests per model and will
+  #   exceed a 30 RMB total budget.
+  requests_by_concurrency:
+    1: 3
+    20: 20
+    80: 80
+    200: 200
+
+  # Full POC template, only enable when budget is approved:
+  # requests_by_concurrency:
+  #   1: 50
+  #   20: 200
+  #   80: 300
+  #   200: 500
+
+  warmup_requests: 0
+  request_timeout_sec: 600
+  temperature: 0.6
+  stream: true
+  sleep_between_levels_sec: 5
+  tokenizer_path: ""
+
+  environment:
+    硬件配置: 待补充
+    CPU/内存: 待补充
+    存储: 待补充
+
+  scenarios:
+    - name: 短文本_23tokens
+      description: 客户确认的 23 tokens 短文本场景
+      input_tokens: 23
+      concurrency_levels: [1, 20, 80, 200]
+      requests_by_concurrency:
+        1: 3
+        20: 20
+        80: 80
+        200: 200
+      dataset: custom
+      dataset_path: 自动生成 23 tokens 短文本样本
+      prompt: "请用中文简要说明大模型网关在企业系统中的核心价值。"
+      max_tokens: 1024
+      min_tokens: 1024
+
+    - name: 长文本_7K
+      description: 自动生成的 7K tokens 长文本基线场景；30 元总预算下不跑长文本并发
+      input_tokens: 7000
+      concurrency_levels: [1]
+      requests_by_concurrency:
+        1: 3
+      dataset: custom
+      dataset_path: 自动生成 7K token 长文本样本
+      prompt: |
+        请阅读以下材料，输出结构化评审报告，包含：一、摘要；二、关键风险；三、性能瓶颈；四、治理建议；五、上线验收标准。
+
+        材料背景：某大型企业准备建设统一大模型网关，用于接入多家国产与海外模型供应商。网关需要支持 OpenAI 兼容协议、Claude 消息协议、Gemini 原生协议、图片生成、视频生成、Embedding、Rerank 和工具调用。业务方希望不同部门能够使用统一 API Key 调用模型，并根据用户分组、价格、可用性、上下文长度、流式能力、模型质量和供应商稳定性进行路由。平台团队需要在上线前完成容量压测、成本测算、日志审计、权限隔离、故障回退和模型替换检测。
+
+        详细材料第 1 段：系统必须支持多租户隔离。每个业务部门拥有独立分组、独立配额、独立消费日志和独立预算提醒。管理员可以配置分组倍率、模型倍率、固定价格、渠道优先级、权重、失败自动禁用、健康检查和渠道亲和策略。对于高并发场景，系统需要避免所有请求集中到单一供应商，并在供应商返回 429、5xx、超时或内容安全拒绝时给出清晰错误。
+        详细材料第 2 段：接口层需要保证协议兼容性。客户端可能使用 OpenAI SDK、Anthropic SDK、Gemini SDK 或自研 HTTP 客户端。网关应尽量保留客户端传入的合法字段，同时过滤目标供应商不支持的 beta 字段。对于参数类型错误、JSON 解析错误、图片 MIME 缺失、消息块结构不合法等客户端错误，应返回 400 系列状态码，不能返回 500，也不能泄露内部 Go 结构体字段名或包路径。
+        详细材料第 3 段：计费层需要准确记录输入 token、输出 token、缓存 token、推理 token、图片张数、视频秒数和工具调用次数。文本模型一般按 token 计费，图片模型可能按张计费，视频模型可能按秒和分辨率计费。系统需要在请求前预扣额度，请求失败后返还额度，请求成功后按实际 usage 结算差额，并把结构化计费字段写入日志，方便财务报表和客户对账。
+        详细材料第 4 段：观测层需要覆盖请求 ID、渠道 ID、模型名、用户 ID、分组、状态码、错误类型、首字延迟、端到端延迟、每 token 延迟、吞吐量、输入 TPM、输出 TPM、RPM、成功率和错误分布。压测报告应展示不同并发下的 TTFT、Latency、TPOT、tokens/s 和成功率，并指出在高并发下是否出现明显退化。
+        详细材料第 5 段：安全层需要处理内容安全、权限控制、密钥保护和审计追踪。系统不能在日志或错误响应中打印供应商 API Key、数据库密码、用户 token 或隐私数据。内部系统调用需要使用 HMAC 签名、时间戳、nonce 和幂等键，避免重放攻击和重复扣费。管理后台导出的日志应限制最大条数，并支持 request_id 定位问题。
+        详细材料第 6 段：性能层需要重点关注流式响应质量。首字延迟反映排队和预填充速度，每 token 延迟反映解码稳定性，端到端延迟反映总体体验。压测工具应区分首个内容 chunk 和 role-only preamble，不应把非内容 chunk 算作首字。对于长文本请求，需要观察上下文越长时 TTFT 是否显著增加，以及输出是否容易中断或超时。
+        详细材料第 7 段：模型治理需要识别供应商是否静默替换模型。平台可以通过可信 baseline、输出风格探针、tokenizer 指纹、embedding drift 和元数据校验来发现模型替换。对于关键模型，建议上线前记录 baseline，上线后定期审计。若供应商返回的 model 字段、usage 字段或 finish_reason 异常，应在报告中标注风险。
+        详细材料第 8 段：运维层需要支持灰度发布、蓝绿部署、快速回滚和上游同步。网关作为核心入口，任何发布都必须先跑协议一致性测试和基础压测。若某个渠道在高并发下出现高比例 429，应调整权重、并发限流或供应商配额；若出现 5xx 或超时，应排查网络、上游 SLA、请求体转换和超时配置。
+        详细材料第 9 段：客户成功团队需要可读报告。报告应先给结论，再给指标表和错误明细。对于每个模型，应展示短文本和长文本在并发 1、20、80、200 下的成功率、TTFT、Latency、TPOT 和 tokens/s。若测试样本为自动生成，应在报告里说明样本来源；若客户提供私有样本，应避免把全文放入公开仓库。
+        详细材料第 10 段：最终验收标准包括：低并发成功率接近 100%；高并发成功率满足客户 SLA；短文本 TTFT 不出现异常尖峰；长文本请求不因上下文长度导致大量超时；日志能准确追踪每个请求；计费与 usage 一致；错误响应语义正确；渠道自动路由符合分组配置；报告能够支撑客户判断是否进入下一阶段集成。
+
+        请基于以上材料输出报告，不要逐段复述原文，重点给出可执行判断。
+      max_tokens: 1024
+      min_tokens: 1024
+
+export:
+  formats: [json, csv, markdown]
+  output_dir: poc-loadtest-results/domestic-sota

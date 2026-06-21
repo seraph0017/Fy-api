@@ -10,6 +10,7 @@ var EffortSuffixes = []string{"-max", "-xhigh", "-high", "-medium", "-low", "-mi
 
 var OpenAIEffortSuffixes = []string{"-high", "-minimal", "-low", "-medium", "-none", "-xhigh"}
 
+// Fy-api overlay: accept DeepSeek V4 no-thinking aliases used by clients such as CC Switch.
 var DeepSeekV4EffortSuffixes = []string{"-none", "-max"}
 
 // TrimEffortSuffix -> modelName level(low) exists
@@ -36,6 +37,14 @@ func ParseOpenAIReasoningEffortFromModelSuffix(modelName string) (string, string
 }
 
 func ParseDeepSeekV4ThinkingSuffix(modelName string) (baseModel string, thinkingType string, effort string, ok bool) {
+	if !strings.HasPrefix(modelName, "deepseek-v4-") {
+		return modelName, "", "", false
+	}
+	if strings.HasSuffix(modelName, "-nothinking") {
+		modelName = strings.TrimSuffix(modelName, "-nothinking") + "-none"
+	} else if strings.HasSuffix(modelName, "-nothink") {
+		modelName = strings.TrimSuffix(modelName, "-nothink") + "-none"
+	}
 	baseModel, suffix, ok := TrimEffortSuffixWithSuffixes(modelName, DeepSeekV4EffortSuffixes)
 	if !ok || !strings.HasPrefix(baseModel, "deepseek-v4-") {
 		return modelName, "", "", false

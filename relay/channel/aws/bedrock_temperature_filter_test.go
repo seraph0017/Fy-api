@@ -27,25 +27,27 @@ func TestIsTemperatureDeprecatedForBedrock(t *testing.T) {
 func TestSanitizeBedrockSamplingParams(t *testing.T) {
 	t.Run("opus-4-7 strips temperature", func(t *testing.T) {
 		temp := 0.7
-		req := &AwsClaudeRequest{Temperature: &temp, TopP: 0.9}
+		topP := 0.9
+		req := &AwsClaudeRequest{Temperature: &temp, TopP: &topP}
 		sanitizeBedrockSamplingParams("claude-opus-4-7", req)
 		if req.Temperature != nil {
 			t.Error("expected Temperature to be nil for claude-opus-4-7")
 		}
-		if req.TopP != 0.9 {
+		if req.TopP == nil || *req.TopP != 0.9 {
 			t.Error("expected TopP to be preserved for claude-opus-4-7")
 		}
 	})
 
 	t.Run("opus-4-6 strips top_p when both present", func(t *testing.T) {
 		temp := 0.7
-		req := &AwsClaudeRequest{Temperature: &temp, TopP: 0.9}
+		topP := 0.9
+		req := &AwsClaudeRequest{Temperature: &temp, TopP: &topP}
 		sanitizeBedrockSamplingParams("claude-opus-4-6", req)
 		if req.Temperature == nil || *req.Temperature != 0.7 {
 			t.Error("expected Temperature to be preserved for claude-opus-4-6")
 		}
-		if req.TopP != 0 {
-			t.Error("expected TopP to be zeroed when both present")
+		if req.TopP != nil {
+			t.Error("expected TopP to be removed when both present")
 		}
 	})
 
@@ -59,21 +61,23 @@ func TestSanitizeBedrockSamplingParams(t *testing.T) {
 	})
 
 	t.Run("opus-4-6 preserves top_p alone", func(t *testing.T) {
-		req := &AwsClaudeRequest{TopP: 0.9}
+		topP := 0.9
+		req := &AwsClaudeRequest{TopP: &topP}
 		sanitizeBedrockSamplingParams("claude-opus-4-6", req)
-		if req.TopP != 0.9 {
+		if req.TopP == nil || *req.TopP != 0.9 {
 			t.Error("expected TopP to be preserved when temperature absent")
 		}
 	})
 
 	t.Run("sonnet preserves both", func(t *testing.T) {
 		temp := 0.7
-		req := &AwsClaudeRequest{Temperature: &temp, TopP: 0.9}
+		topP := 0.9
+		req := &AwsClaudeRequest{Temperature: &temp, TopP: &topP}
 		sanitizeBedrockSamplingParams("claude-sonnet-4-6", req)
 		if req.Temperature == nil || *req.Temperature != 0.7 {
 			t.Error("expected Temperature preserved for sonnet")
 		}
-		if req.TopP != 0 {
+		if req.TopP != nil {
 			t.Error("expected TopP stripped for sonnet when both present")
 		}
 	})
@@ -107,12 +111,13 @@ func TestSanitizeBedrockSamplingParams(t *testing.T) {
 
 	t.Run("clamps temperature 2.0 from OpenAI-compat client", func(t *testing.T) {
 		temp := 2.0
-		req := &AwsClaudeRequest{Temperature: &temp, TopP: 0.9}
+		topP := 0.9
+		req := &AwsClaudeRequest{Temperature: &temp, TopP: &topP}
 		sanitizeBedrockSamplingParams("claude-sonnet-4-5", req)
 		if req.Temperature == nil || *req.Temperature != 1.0 {
 			t.Errorf("expected Temperature clamped to 1.0, got %v", req.Temperature)
 		}
-		if req.TopP != 0 {
+		if req.TopP != nil {
 			t.Error("expected TopP stripped")
 		}
 	})

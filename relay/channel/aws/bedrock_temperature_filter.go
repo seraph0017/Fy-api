@@ -45,8 +45,8 @@ func sanitizeBedrockSamplingParams(modelName string, request *AwsClaudeRequest) 
 			clamped := 1.0
 			request.Temperature = &clamped
 		}
-		if request.TopP != 0 {
-			request.TopP = 0
+		if request.TopP != nil {
+			request.TopP = nil
 		}
 	}
 }
