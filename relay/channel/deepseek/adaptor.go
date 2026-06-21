@@ -92,9 +92,32 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 	if err := applyDeepSeekV4OpenAIThinkingSuffix(info, request); err != nil {
 		return nil, err
 	}
+	normalizeDeepSeekOpenAIRequestForUpstream(request)
 	logDeepSeekThinkingDebug(c, request.Model, request.THINKING, request.ReasoningEffort)
 
 	return request, nil
+}
+
+// Fy-api overlay: Codex/GPT-5 style clients may send roles that DeepSeek
+// OpenAI-compatible upstreams reject.
+func normalizeDeepSeekOpenAIRequestForUpstream(request *dto.GeneralOpenAIRequest) {
+	if request == nil {
+		return
+	}
+	for i := range request.Messages {
+		request.Messages[i].Role = normalizeDeepSeekOpenAIMessageRole(request.Messages[i].Role)
+	}
+}
+
+func normalizeDeepSeekOpenAIMessageRole(role string) string {
+	switch strings.TrimSpace(role) {
+	case "system", "user", "assistant", "tool", "latest_reminder":
+		return strings.TrimSpace(role)
+	case "developer":
+		return "system"
+	default:
+		return "user"
+	}
 }
 
 func applyDeepSeekV4OpenAIThinkingSuffix(info *relaycommon.RelayInfo, request *dto.GeneralOpenAIRequest) error {

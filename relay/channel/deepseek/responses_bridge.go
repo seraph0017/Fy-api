@@ -289,17 +289,19 @@ func deepSeekResponsesInstructionsText(raw []byte) (string, error) {
 
 func deepSeekResponsesInputItemToMessage(input map[string]any) (dto.Message, bool, error) {
 	inputType, _ := input["type"].(string)
-	if inputType == "function_call_output" {
+	switch inputType {
+	case "function_call_output":
 		return deepSeekResponsesFunctionCallOutputToToolMessage(input)
+	case "function_call":
+		return deepSeekResponsesFunctionCallToAssistantMessage(input)
+	case "reasoning", "summary", "reasoning_summary", "reasoning_text":
+		return dto.Message{}, false, nil
 	}
 	if inputType != "" && inputType != "message" {
 		return dto.Message{}, false, fmt.Errorf("deepseek responses-to-chat bridge does not support input item type %s", inputType)
 	}
 	role, _ := input["role"].(string)
-	role = strings.TrimSpace(role)
-	if role == "" {
-		role = "user"
-	}
+	role = normalizeDeepSeekOpenAIMessageRole(role)
 	msg := dto.Message{Role: role}
 
 	contentRaw, err := common.Marshal(input["content"])
@@ -319,11 +321,43 @@ func deepSeekResponsesInputItemToMessage(input map[string]any) (dto.Message, boo
 			return dto.Message{}, false, err
 		}
 		msg.SetMediaContent(contents)
-	case "":
+	case "unknown", "null":
 		msg.SetStringContent("")
 	default:
 		return dto.Message{}, false, fmt.Errorf("deepseek responses-to-chat bridge does not support input content type %s", common.GetJsonType(contentRaw))
 	}
+	return msg, true, nil
+}
+
+func deepSeekResponsesFunctionCallToAssistantMessage(input map[string]any) (dto.Message, bool, error) {
+	callID, _ := input["call_id"].(string)
+	if strings.TrimSpace(callID) == "" {
+		callID, _ = input["id"].(string)
+	}
+	name, _ := input["name"].(string)
+	if strings.TrimSpace(name) == "" {
+		return dto.Message{}, false, nil
+	}
+	arguments := ""
+	switch v := input["arguments"].(type) {
+	case string:
+		arguments = v
+	default:
+		argumentsBytes, _ := common.Marshal(v)
+		arguments = string(argumentsBytes)
+	}
+	msg := dto.Message{Role: "assistant"}
+	msg.SetStringContent("")
+	msg.SetToolCalls([]dto.ToolCallRequest{
+		{
+			ID:   callID,
+			Type: "function",
+			Function: dto.FunctionRequest{
+				Name:      name,
+				Arguments: arguments,
+			},
+		},
+	})
 	return msg, true, nil
 }
 
