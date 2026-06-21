@@ -231,6 +231,17 @@
 - **背景**：CN 环境客户通过 CC Switch 使用 DeepSeek V4 时，更自然会写 `deepseek-v4-pro-nothink` / `deepseek-v4-flash-nothink`。当前仓库只识别 `-none`，导致 nothink 请求不会命中 DeepSeek V4 thinking 适配层。这里在网关侧补别名兼容，同时把对外模型名补齐到产品约定。
 - **冲突风险**：低（仅 suffix 解析、模型常量与独立测试）
 - **Merge 策略**：若 upstream 后续为 DeepSeek V4 增加 no-thinking 官方别名，优先采用 upstream；否则保留 alias 兼容层与 `-nothink` 展示名
+
+### B-16.1 [deepseek] DeepSeek OpenAI-compatible protocol bridge for Codex / Claude Code
+- **新增文件**：
+  - `relay/channel/deepseek/responses_bridge.go`（`// Fy-api overlay:`：将 DeepSeek 渠道的 `/v1/responses` 请求降级为 OpenAI-compatible `/v1/chat/completions` 出站请求，并把 chat/completions 响应转换回 Responses 响应；支持非流式和基础流式文本、function tools / tool_choice / tool_calls）
+- **修改文件**：
+  - `relay/channel/deepseek/adaptor.go`（`/v1/messages` 不再默认打 DeepSeek Claude 原生 `/anthropic/v1/messages`，而是先 Claude→OpenAI chat，再走 DeepSeek V4 thinking suffix 归一化；`/v1/responses` 走上面的 Responses→Chat bridge；最终出站格式记录为 `openai`，但客户端入口格式保持原值，便于响应再转回 Claude/Responses）
+  - `relay/channel/deepseek/adaptor_test.go`（覆盖 Claude Messages→OpenAI chat、Responses→OpenAI chat、DeepSeek V4 `-nothink` thinking 注入、Responses function tools 和 chat tool_calls 响应回转）
+- **限制**：当前 bridge 不支持 Responses stateful 能力（`previous_response_id` / `conversation` / `prompt`）、OpenAI 内置工具（如 `web_search_preview` / `file_search`）和 `max_tool_calls`，遇到这些参数会明确返回 convert error；这些能力需要真实 Responses 上游或后续实现状态/工具等价层。
+- **背景**：CN 上游/中转站通常只支持 OpenAI chat/completions 协议和原始模型名（如 `deepseek-v4-pro`），不支持自定义 `deepseek-v4-pro-nothink`、`/v1/messages` 或 `/v1/responses`。Codex 使用 `/v1/responses`，Claude Code 使用 `/v1/messages`，因此 DeepSeek adapter 需要在网关侧桥接协议并继续注入 `thinking` 参数。
+- **冲突风险**：中（`relay/channel/deepseek/adaptor.go` 是上游 provider adapter 文件，后续 upstream 若实现 DeepSeek 原生 Responses / Anthropic Messages 兼容时可能冲突；新增 bridge 文件独立，容易删除或替换）
+- **Merge 策略**：若 upstream 后续补齐 DeepSeek `/v1/responses` / `/v1/messages` 到 OpenAI chat 的等价转换，优先采用 upstream；否则保留本 bridge，特别是 `FinalRequestRelayFormat=openai` 与保留入口 `RelayFormat` 的双轨语义。
   - 用途：图片渠道六阶段测试（探针 → 冒烟 → API 兼容 → 输出验证 → 内容质量 Phase A/B → 安全抽样），单命令产出结构化 JSON + markdown 报告
 - **新增测试**：`scripts/channel-benchmark/py/tests/test_image_conformance_json.py`、`scripts/channel-benchmark/py/tests/test_phase2_phase3.py`
 - **修改文件**：`scripts/channel-benchmark/py/pyproject.toml`（注册 `fy-image-conformance` CLI）
