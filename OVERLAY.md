@@ -238,7 +238,7 @@
 - **修改文件**：
   - `relay/channel/deepseek/adaptor.go`（`/v1/messages` 不再默认打 DeepSeek Claude 原生 `/anthropic/v1/messages`，而是先 Claude→OpenAI chat，再走 DeepSeek V4 thinking suffix 归一化；`/v1/responses` 走上面的 Responses→Chat bridge；最终出站格式记录为 `openai`，但客户端入口格式保持原值，便于响应再转回 Claude/Responses）
   - `relay/channel/deepseek/adaptor_test.go`（覆盖 Claude Messages→OpenAI chat、Responses→OpenAI chat、DeepSeek V4 `-nothink` thinking 注入、Responses function tools / namespace tools 和 chat tool_calls 响应回转）
-- **限制**：当前 bridge 不支持 Responses stateful 能力（`previous_response_id` / `conversation` / `prompt`）、OpenAI 内置工具（如 `web_search_preview` / `file_search`）和 `max_tool_calls`，遇到这些参数会明确返回 convert error；`namespace` 仅作为 Codex/MCP 工具容器做 function flatten，不代表 DeepSeek 上游原生支持 Responses namespace。
+- **限制**：当前 bridge 不支持 Responses stateful 能力（`previous_response_id` / `conversation` / `prompt`）和 `max_tool_calls`；OpenAI/Codex 内置工具（如 `web_search_preview` / `file_search` / `tool_search` / `image_generation`）会被静默过滤，不会传给 DeepSeek 上游；`namespace` 仅作为 Codex/MCP 工具容器做 function flatten，不代表 DeepSeek 上游原生支持 Responses namespace。
 - **背景**：CN 上游/中转站通常只支持 OpenAI chat/completions 协议和原始模型名（如 `deepseek-v4-pro`），不支持自定义 `deepseek-v4-pro-nothink`、`/v1/messages` 或 `/v1/responses`。Codex 使用 `/v1/responses`，Claude Code 使用 `/v1/messages`，因此 DeepSeek adapter 需要在网关侧桥接协议并继续注入 `thinking` 参数。
 - **冲突风险**：中（`relay/channel/deepseek/adaptor.go` 是上游 provider adapter 文件，后续 upstream 若实现 DeepSeek 原生 Responses / Anthropic Messages 兼容时可能冲突；新增 bridge 文件独立，容易删除或替换）
 - **Merge 策略**：若 upstream 后续补齐 DeepSeek `/v1/responses` / `/v1/messages` 到 OpenAI chat 的等价转换，优先采用 upstream；否则保留本 bridge，特别是 `FinalRequestRelayFormat=openai` 与保留入口 `RelayFormat` 的双轨语义。

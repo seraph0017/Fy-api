@@ -238,11 +238,47 @@ func TestDeepSeekResponsesBridgeRejectsUnsupportedBuiltInTools(t *testing.T) {
 	req := dto.OpenAIResponsesRequest{
 		Model: "deepseek-v4-pro-nothink",
 		Input: common.StringToByteSlice(`"hello"`),
-		Tools: common.StringToByteSlice(`[{"type":"web_search_preview"}]`),
+		Tools: common.StringToByteSlice(`[
+			{"type":"web_search_preview"},
+			{"type":"file_search"},
+			{"type":"tool_search"},
+			{"type":"image_generation"},
+			{"type":"custom"}
+		]`),
 	}
 
-	_, err := deepSeekResponsesToChatCompletionsRequest(req)
-	require.ErrorContains(t, err, "tool type web_search_preview")
+	chatReq, err := deepSeekResponsesToChatCompletionsRequest(req)
+	require.NoError(t, err)
+	require.Empty(t, chatReq.Tools)
+	require.Nil(t, chatReq.ToolChoice)
+}
+
+func TestDeepSeekResponsesBridgeKeepsSupportedToolsWhenMixedWithUnsupportedOnes(t *testing.T) {
+	t.Parallel()
+
+	req := dto.OpenAIResponsesRequest{
+		Model: "deepseek-v4-pro-nothink",
+		Input: common.StringToByteSlice(`"hello"`),
+		Tools: common.StringToByteSlice(`[
+			{"type":"web_search_preview"},
+			{"type":"namespace","name":"mcp__calendar","tools":[{"type":"function","name":"create_event","parameters":{"type":"object"}}]},
+			{"type":"file_search"},
+			{"type":"function","name":"shell","description":"run shell","parameters":{"type":"object"}}
+		]`),
+		ToolChoice: common.StringToByteSlice(`{"type":"function","namespace":"mcp__calendar","name":"create_event"}`),
+	}
+
+	chatReq, err := deepSeekResponsesToChatCompletionsRequest(req)
+	require.NoError(t, err)
+	require.Len(t, chatReq.Tools, 2)
+	require.Equal(t, "mcp__calendar___create_event", chatReq.Tools[0].Function.Name)
+	require.Equal(t, "shell", chatReq.Tools[1].Function.Name)
+	require.Equal(t, map[string]any{
+		"type": "function",
+		"function": map[string]any{
+			"name": "mcp__calendar___create_event",
+		},
+	}, chatReq.ToolChoice)
 }
 
 func TestDeepSeekResponsesFunctionCallOutputToChatToolMessage(t *testing.T) {
