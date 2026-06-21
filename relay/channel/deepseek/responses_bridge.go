@@ -48,6 +48,9 @@ func deepSeekResponsesToChatCompletionsRequest(request dto.OpenAIResponsesReques
 	if err != nil {
 		return nil, err
 	}
+	if len(tools) == 0 {
+		toolChoice = nil
+	}
 
 	chatRequest := &dto.GeneralOpenAIRequest{
 		Model:                request.Model,
@@ -144,7 +147,7 @@ func deepSeekResponsesToolsToChatTools(raw []byte) ([]dto.ToolCallRequest, error
 			}
 			chatTools = append(chatTools, namespaceTools...)
 		default:
-			return nil, fmt.Errorf("deepseek responses-to-chat bridge does not support tool type %s", toolType)
+			continue
 		}
 	}
 	return chatTools, nil
@@ -164,15 +167,15 @@ func deepSeekResponsesNamespaceToolToChatTools(tool map[string]any) ([]dto.ToolC
 	for _, rawTool := range rawTools {
 		namespaceTool, ok := rawTool.(map[string]any)
 		if !ok {
-			return nil, errors.New("deepseek responses-to-chat bridge requires namespace tool objects")
+			continue
 		}
 		toolType, _ := namespaceTool["type"].(string)
 		if toolType != "function" {
-			return nil, fmt.Errorf("deepseek responses-to-chat bridge does not support namespace tool type %s", toolType)
+			continue
 		}
 		chatTool, err := deepSeekResponsesFunctionToolToChatTool(namespace, namespaceTool)
 		if err != nil {
-			return nil, err
+			continue
 		}
 		chatTools = append(chatTools, chatTool)
 	}
@@ -250,7 +253,7 @@ func deepSeekResponsesToolChoiceToChatToolChoice(raw []byte) (any, error) {
 				},
 			}, nil
 		}
-		return choice, nil
+		return nil, nil
 	default:
 		return nil, fmt.Errorf("deepseek responses-to-chat bridge does not support tool_choice type %s", common.GetJsonType(raw))
 	}
