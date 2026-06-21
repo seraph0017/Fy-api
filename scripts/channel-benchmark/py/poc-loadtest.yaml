@@ -1,0 +1,79 @@
+# POC performance validation based on bugs/POC压测方法.docx.
+# Keep secrets in env vars:
+#   export FY_API_URL=https://api-test.tracenex.cn
+#   export FY_API_USER_TOKEN=sk-...
+
+gateway:
+  base_url: ${FY_API_URL:-http://localhost:3000}
+  user_token: ${FY_API_USER_TOKEN}
+  # Optional admin-channel pin. Requires an admin user's sk token.
+  # channels:
+  #   - name: supplier-a
+  #     pin_channel_id: 42
+
+poc:
+  platform_name: TraceNex
+  report_title: LLM性能验证报告
+  report_id: ""
+  test_scope: 短文本 / 中文本 / 长文本在不同并发下的性能测试
+
+  # One or more model names exposed by Fy-api.
+  models:
+    - deepseek-r1
+
+  # Matches the POC template: 1/10/20/30/40/50/64/80/128/256.
+  concurrency_levels: [1, 10, 20, 30, 40, 50, 64, 80, 128, 256]
+
+  # Optional overrides. Omitted levels use the POC template defaults:
+  # 1=>50, 10=>100, 20/30/40=>200, 50/64=>250, 80=>300, 128=>350, else=>500.
+  requests_by_concurrency: {}
+
+  warmup_requests: 0
+  request_timeout_sec: 600
+  temperature: 0.6
+  stream: true
+  sleep_between_levels_sec: 60
+  tokenizer_path: ""
+
+  environment:
+    硬件配置: 待补充
+    CPU/内存: 待补充
+    存储: 待补充
+
+  scenarios:
+    - name: 短文本
+      description: 即时交互能力
+      input_tokens: 23
+      dataset: openqa
+      dataset_path: Hello-SimpleAI/HC3-Chinese open_qa.jsonl
+      prompt: "请用中文简要回答：人工智能是什么？"
+      max_tokens: 1024
+      min_tokens: 1024
+
+    - name: 中文本
+      description: 一般文档处理
+      input_tokens: 1000
+      dataset: custom
+      dataset_path: 自行构造 1k token 中文文本数据集
+      prompt: |
+        请阅读以下材料并总结核心观点、关键风险和可执行建议。
+
+        人工智能系统正在从单点工具演进为企业生产流程中的通用能力层。企业在引入大模型时，需要同时关注模型效果、响应速度、成本控制、权限隔离、日志审计和供应商稳定性。统一网关可以把不同供应商、不同模型和不同计费方式整合到同一套 API 之下，降低业务系统的接入复杂度。与此同时，网关也必须提供清晰的监控和压测能力，帮助团队在上线前识别首字延迟过高、输出速度不稳定、并发下错误率升高、模型被替换等问题。
+      max_tokens: 1024
+      min_tokens: 1024
+
+    - name: 长文本
+      description: 大规模内容处理
+      input_tokens: 7000
+      dataset: longalpaca
+      dataset_path: Yukang/LongAlpaca-12k
+      prompt: |
+        你是一名企业技术评审专家。请基于下面的长文输入，输出结构化评审报告，包含摘要、风险、瓶颈、落地建议和验收标准。请保持中文回答。
+
+        长文本占位：实际 POC 请替换为约 7k tokens 的 LongAlpaca 或客户私有长文样本。为了避免把私有数据提交到仓库，本示例只保留占位文本。
+      max_tokens: 1024
+      min_tokens: 1024
+
+export:
+  formats: [json, csv, markdown]
+  output_dir: poc-loadtest-results

@@ -1,8 +1,8 @@
 # TraceNex 定制清单（OVERLAY.md）
 
-> 最后更新：2026-06-07（同步上游 `upstream/main`，保留 TraceNex overlay）
+> 最后更新：2026-06-15（同步上游 `upstream/main`，保留 TraceNex overlay）
 > 维护人：<你的名字>
-> 上游基线：new-api @ `4ca47ee2` (2026-06-07)
+> 上游基线：new-api @ `9bc1a53d` (2026-06-15)
 >
 > **重要：上游 v1.0（commit `a42b39760`，2026-04-28）把整个老前端搬到了 `web/classic/`，并行新建了 `web/default/`（React 19 + TypeScript + Rsbuild + Base UI + Tailwind）。TraceNex 选择路径 A：所有前端 overlay 跟随 `web/classic/` 路径，runtime theme 锁死在 `"classic"`，不允许切到 default。详见 `docs/上游v1.0前端重写炸弹-影响分析与对策.md`。**
 
@@ -96,6 +96,7 @@
     - `fy_image_conformance/` —— 图片协议一致性 + 质量 + 安全（六阶段：探针→冒烟→API兼容→输出验证→Phase A/B 质量→安全）
     - `fy_image_canary/` —— 图片金丝雀真实性检测（5A vendor 对比 + 5B 指纹/跨渠道/能力边界）
     - `fy_score/` —— 统一评分器（五维度加权，文本/图片不同权重，产出 scorecard）
+    - `fy_poc_loadtest/` —— 按 `bugs/POC压测方法.docx` / `bugs/报告模板.docx` 口径输出客户 POC 压测报告（三场景：23/1k/7k tokens；并发 1/10/20/30/40/50/64/80/128/256；指标 TTFT/Latency/TPOT/tokens/s/成功率）
     - `seedance_gateway_vs_volcengine.py` —— Seedance 2.0 网关 vs 火山直连对照脚本，用于排查上游内容安全和网关转换差异
     - `tests/` + `tests_quality/` + `tests_canary/` + `tests_image_canary/` —— 102 个 e2e 测试
   - `docs/seedance-real-person-video-support-plan.md` —— 基于 DJLine 可信素材链路整理的 SD2.0 真人视频支持方案
@@ -206,7 +207,7 @@
   2. Azure `gpt-image-2` 链路对 `response_format` 不兼容，工具默认不再发送该字段；网关运行时也会在命中 Azure GPT image 模型时删除该字段，旧 DALL-E 模型继续保留
   3. 2026-05-15 CN 线上排查确认：channel `42` 和 `43` 共享同一个 Azure `base_url + key`，并非独立配额桶；本地图片压测配置已按此降并发标注
 - **冲突风险**：低（benchmark 子树独立；`relay/image_handler.go` 仅一小段日志文案逻辑）
-- **Merge 策略**：benchmark 子树整体保留；若 upstream 后续自带 image loadtest，可比较后择优；`relay/image_handler.go` 若 upstream 修复同类质量标签记录问题，merge 时优先采用 upstream 实现
+- **Merge 策略**：benchmark 子树整体保留；若 upstream 后续自带 image loadtest，可比较后择优；`relay/image_handler.go` 若 upstream 修复同类质量标签记录问题，merge 时优先采用 upstream 实现。2026-06-15 同步上游图片流/图片编辑实现时，保留本条 Azure `response_format` 过滤 overlay。
 
 ### B-15 [benchmark/image] 余额不足自动停机
 - **修改文件**：
@@ -221,6 +222,15 @@
   - `cli.py` / `config.py` / `client.py` / `probe.py` / `budget.py` / `report.py`
   - `suites/api_compat.py` / `output_valid.py` / `prompt_follow.py` / `perf.py` / `safety.py`
   - 命令：`fy-image-conformance`
+
+### B-16 [deepseek] DeepSeek V4 `-nothink` / `-nothinking` 别名兼容
+- **修改文件**：
+  - `setting/reasoning/suffix.go`（`// Fy-api overlay:`：在 DeepSeek V4 既有 `-none` / `-max` 之外，兼容客户端常用的 `-nothink` / `-nothinking`，统一映射到 `thinking.type=disabled`）
+  - `relay/channel/deepseek/constants.go`（对外模型列表补充 `deepseek-v4-pro-nothink` / `deepseek-v4-flash-nothink`，保留既有 `-none` 兼容名）
+  - `setting/reasoning/suffix_test.go`、`relay/channel/deepseek/adaptor_test.go`（补别名解析与 OpenAI/Claude 适配回归测试）
+- **背景**：CN 环境客户通过 CC Switch 使用 DeepSeek V4 时，更自然会写 `deepseek-v4-pro-nothink` / `deepseek-v4-flash-nothink`。当前仓库只识别 `-none`，导致 nothink 请求不会命中 DeepSeek V4 thinking 适配层。这里在网关侧补别名兼容，同时把对外模型名补齐到产品约定。
+- **冲突风险**：低（仅 suffix 解析、模型常量与独立测试）
+- **Merge 策略**：若 upstream 后续为 DeepSeek V4 增加 no-thinking 官方别名，优先采用 upstream；否则保留 alias 兼容层与 `-nothink` 展示名
   - 用途：图片渠道六阶段测试（探针 → 冒烟 → API 兼容 → 输出验证 → 内容质量 Phase A/B → 安全抽样），单命令产出结构化 JSON + markdown 报告
 - **新增测试**：`scripts/channel-benchmark/py/tests/test_image_conformance_json.py`、`scripts/channel-benchmark/py/tests/test_phase2_phase3.py`
 - **修改文件**：`scripts/channel-benchmark/py/pyproject.toml`（注册 `fy-image-conformance` CLI）

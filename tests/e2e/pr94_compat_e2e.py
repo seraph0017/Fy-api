@@ -284,46 +284,46 @@ def expect_success_json(resp: httpx.Response) -> tuple[bool, str]:
     return True, f"http {resp.status_code}"
 
 
-def check_bedrock_top_p_only(client: httpx.Client, token: str, model: str, pin_channel_id: int | None) -> CaseResult:
+def check_bedrock_top_p_only(client: httpx.Client, model: str) -> CaseResult:
     resp = post_json(client, "/v1/messages", {
         "model": model,
         "max_tokens": 64,
         "top_p": 0.8,
         "messages": [{"role": "user", "content": "Reply with OK only."}],
-    }, extra_headers=auth_headers(token, pin_channel_id))
+    })
     ok, detail = expect_success_json(resp)
     return CaseResult("bedrock_top_p_only", ok, detail, resp.status_code)
 
 
-def check_bedrock_temp_and_top_p(client: httpx.Client, token: str, model: str, pin_channel_id: int | None) -> CaseResult:
+def check_bedrock_temp_and_top_p(client: httpx.Client, model: str) -> CaseResult:
     resp = post_json(client, "/v1/messages", {
         "model": model,
         "max_tokens": 64,
         "temperature": 0.7,
         "top_p": 0.8,
         "messages": [{"role": "user", "content": "Reply with OK only."}],
-    }, extra_headers=auth_headers(token, pin_channel_id))
+    })
     ok, detail = expect_success_json(resp)
     return CaseResult("bedrock_temp_and_top_p", ok, detail, resp.status_code)
 
 
-def check_bedrock_temp_clamp(client: httpx.Client, token: str, model: str, pin_channel_id: int | None) -> CaseResult:
+def check_bedrock_temp_clamp(client: httpx.Client, model: str) -> CaseResult:
     resp = post_json(client, "/v1/messages", {
         "model": model,
         "max_tokens": 64,
         "temperature": 2,
         "messages": [{"role": "user", "content": "Reply with OK only."}],
-    }, extra_headers=auth_headers(token, pin_channel_id))
+    })
     ok, detail = expect_success_json(resp)
     return CaseResult("bedrock_temp_clamp", ok, detail, resp.status_code)
 
 
-def check_bedrock_defaults(client: httpx.Client, token: str, model: str, pin_channel_id: int | None) -> CaseResult:
+def check_bedrock_defaults(client: httpx.Client, model: str) -> CaseResult:
     resp = post_json(client, "/v1/messages", {
         "model": model,
         "max_tokens": 64,
         "messages": [{"role": "user", "content": "Reply with OK only."}],
-    }, extra_headers=auth_headers(token, pin_channel_id))
+    })
     ok, detail = expect_success_json(resp)
     return CaseResult("bedrock_defaults", ok, detail, resp.status_code)
 
@@ -368,13 +368,8 @@ def _claude_tool_body(model: str, arguments: str) -> dict[str, Any]:
     }
 
 
-def check_claude_empty_arguments(client: httpx.Client, token: str, model: str, pin_channel_id: int | None) -> CaseResult:
-    resp = post_json(
-        client,
-        "/v1/chat/completions",
-        _claude_tool_body(model, ""),
-        extra_headers=auth_headers(token, pin_channel_id),
-    )
+def check_claude_empty_arguments(client: httpx.Client, model: str) -> CaseResult:
+    resp = post_json(client, "/v1/chat/completions", _claude_tool_body(model, ""))
     if resp.status_code >= 500:
         return CaseResult(
             "claude_tool_empty_arguments",
@@ -397,13 +392,8 @@ def check_claude_empty_arguments(client: httpx.Client, token: str, model: str, p
     )
 
 
-def check_claude_object_arguments(client: httpx.Client, token: str, model: str, pin_channel_id: int | None) -> CaseResult:
-    resp = post_json(
-        client,
-        "/v1/chat/completions",
-        _claude_tool_body(model, "{}"),
-        extra_headers=auth_headers(token, pin_channel_id),
-    )
+def check_claude_object_arguments(client: httpx.Client, model: str) -> CaseResult:
+    resp = post_json(client, "/v1/chat/completions", _claude_tool_body(model, "{}"))
     if resp.status_code >= 500:
         return CaseResult(
             "claude_tool_object_arguments",
@@ -428,18 +418,30 @@ def check_claude_object_arguments(client: httpx.Client, token: str, model: str, 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--target-env", choices=sorted(TARGET_DEFAULTS), default="sg-test")
     parser.add_argument("--base-url", default="")
     parser.add_argument("--token", default="")
     parser.add_argument("--bedrock-model", default="")
-    parser.add_argument("--bedrock-channel-id", type=int, default=0)
     parser.add_argument("--claude-model", default="")
-    parser.add_argument("--claude-channel-id", type=int, default=0)
+    parser.add_argument("--bedrock-channel-id", type=int, default=None)
+    parser.add_argument("--claude-channel-id", type=int, default=None)
+    parser.add_argument("--target-env", choices=sorted(TARGET_DEFAULTS.keys()), default="sg-test")
     parser.add_argument("--timeout", type=int, default=int(env("FYAPI_E2E_TIMEOUT", "90")))
     parser.add_argument("--only", choices=["all", "bedrock", "claude"], default="all")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
-    cfg = resolve_defaults(args)
+
+    try:
+        defaults = resolve_defaults(args)
+    except Exception as exc:
+        print(f"failed to discover target defaults: {exc}", file=sys.stderr)
+        return 2
+
+    args.base_url = defaults.base_url
+    args.token = defaults.token
+    args.bedrock_model = defaults.bedrock_model
+    args.bedrock_channel_id = defaults.bedrock_channel_id
+    args.claude_model = defaults.claude_model
+    args.claude_channel_id = defaults.claude_channel_id
 
     if args.dry_run:
         print("cases:")
@@ -449,35 +451,47 @@ def main() -> int:
         print("  - bedrock_defaults")
         print("  - claude_tool_empty_arguments")
         print("  - claude_tool_object_arguments")
-        dry = asdict(cfg)
-        dry["token"] = mask_token(cfg.token)
-        print(json.dumps(dry, ensure_ascii=False, indent=2))
-        print(f"only={args.only}")
+        print(json.dumps({
+            "target_env": defaults.target_env,
+            "base_url": args.base_url or "<required>",
+            "token": mask_token(args.token),
+            "bedrock_model": args.bedrock_model,
+            "bedrock_channel_id": args.bedrock_channel_id,
+            "claude_model": args.claude_model,
+            "claude_channel_id": args.claude_channel_id,
+            "only": args.only,
+        }, ensure_ascii=False, indent=2))
         return 0
 
-    if not cfg.base_url or not cfg.token:
+    if not args.base_url or not args.token:
         print("FYAPI_E2E_BASE_URL and FYAPI_E2E_TOKEN are required", file=sys.stderr)
         return 2
-    if args.only in {"all", "bedrock"} and (not cfg.bedrock_model or not cfg.bedrock_channel_id):
-        print("bedrock defaults are unavailable for this target env; set model/channel overrides explicitly", file=sys.stderr)
+    if args.only in {"all", "bedrock"} and (not args.bedrock_model or args.bedrock_channel_id is None):
+        print("Bedrock model and channel id are required", file=sys.stderr)
         return 2
-    if args.only in {"all", "claude"} and (not cfg.claude_model or not cfg.claude_channel_id):
-        print("claude defaults are unavailable for this target env; set model/channel overrides explicitly", file=sys.stderr)
+    if args.only in {"all", "claude"} and (not args.claude_model or args.claude_channel_id is None):
+        print("Claude model and channel id are required", file=sys.stderr)
         return 2
 
     results: list[CaseResult] = []
-    with httpx.Client(
-        base_url=cfg.base_url.rstrip("/"),
-        timeout=args.timeout,
-    ) as client:
-        if args.only in {"all", "bedrock"}:
-            results.append(check_bedrock_top_p_only(client, cfg.token, cfg.bedrock_model, cfg.bedrock_channel_id))
-            results.append(check_bedrock_temp_and_top_p(client, cfg.token, cfg.bedrock_model, cfg.bedrock_channel_id))
-            results.append(check_bedrock_temp_clamp(client, cfg.token, cfg.bedrock_model, cfg.bedrock_channel_id))
-            results.append(check_bedrock_defaults(client, cfg.token, cfg.bedrock_model, cfg.bedrock_channel_id))
-        if args.only in {"all", "claude"}:
-            results.append(check_claude_empty_arguments(client, cfg.token, cfg.claude_model, cfg.claude_channel_id))
-            results.append(check_claude_object_arguments(client, cfg.token, cfg.claude_model, cfg.claude_channel_id))
+    if args.only in {"all", "bedrock"}:
+        with httpx.Client(
+            base_url=args.base_url.rstrip("/"),
+            headers=auth_headers(args.token, args.bedrock_channel_id),
+            timeout=args.timeout,
+        ) as client:
+            results.append(check_bedrock_top_p_only(client, args.bedrock_model))
+            results.append(check_bedrock_temp_and_top_p(client, args.bedrock_model))
+            results.append(check_bedrock_temp_clamp(client, args.bedrock_model))
+            results.append(check_bedrock_defaults(client, args.bedrock_model))
+    if args.only in {"all", "claude"}:
+        with httpx.Client(
+            base_url=args.base_url.rstrip("/"),
+            headers=auth_headers(args.token, args.claude_channel_id),
+            timeout=args.timeout,
+        ) as client:
+            results.append(check_claude_empty_arguments(client, args.claude_model))
+            results.append(check_claude_object_arguments(client, args.claude_model))
 
     for result in results:
         status = "PASS" if result.ok else "FAIL"

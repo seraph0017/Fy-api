@@ -9,6 +9,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/relay/channel"
 	"github.com/QuantumNous/new-api/relay/channel/claude"
 	"github.com/QuantumNous/new-api/relay/channel/openai"
@@ -40,6 +41,8 @@ func (a *Adaptor) ConvertClaudeRequest(c *gin.Context, info *relaycommon.RelayIn
 	if err := applyDeepSeekV4ClaudeThinkingSuffix(info, claudeRequest); err != nil {
 		return nil, err
 	}
+	rawThinking, _ := common.Marshal(claudeRequest.Thinking)
+	logDeepSeekThinkingDebug(c, claudeRequest.Model, rawThinking, info.ReasoningEffort)
 	return claudeRequest, nil
 }
 
@@ -87,6 +90,7 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 	if err := applyDeepSeekV4OpenAIThinkingSuffix(info, request); err != nil {
 		return nil, err
 	}
+	logDeepSeekThinkingDebug(c, request.Model, request.THINKING, request.ReasoningEffort)
 
 	return request, nil
 }
@@ -147,6 +151,17 @@ func applyDeepSeekV4ClaudeThinkingSuffix(info *relaycommon.RelayInfo, request *d
 		info.ReasoningEffort = effort
 	}
 	return nil
+}
+
+func logDeepSeekThinkingDebug(c *gin.Context, model string, rawThinking []byte, reasoningEffort string) {
+	if !common.DebugEnabled {
+		return
+	}
+	thinkingText := ""
+	if len(rawThinking) > 0 {
+		thinkingText = string(rawThinking)
+	}
+	logger.LogDebug(c, "DeepSeek upstream request fields: model=%s thinking=%s reasoning_effort=%s", model, thinkingText, reasoningEffort)
 }
 
 func (a *Adaptor) ConvertRerankRequest(c *gin.Context, relayMode int, request dto.RerankRequest) (any, error) {

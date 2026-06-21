@@ -41,7 +41,7 @@ python3 tests/e2e/pr94_compat_e2e.py --target-env cn-test --dry-run
 export FYAPI_E2E_BASE_URL="https://api-test.aitracenex.com"
 export FYAPI_E2E_TOKEN="<admin-user-token>"
 export FYAPI_E2E_BEDROCK_MODEL="claude-sonnet-4-5"
-export FYAPI_E2E_CLAUDE_MODEL="claude-opus-4-7"
+export FYAPI_E2E_CLAUDE_MODEL="<claude-model>"
 
 python3 tests/e2e/pr94_compat_e2e.py \
   --bedrock-channel-id 5 \
@@ -66,4 +66,6 @@ export FYAPI_E2E_TIMEOUT=90
 - 默认使用 channel pin，要求发现到的 token 属于 admin 用户
 - `sg-test` 当前可自动发现 Bedrock Claude 和普通 Claude 两组默认值
 - `cn-test` 当前没有真正的 AWS `type=33` Claude 渠道，所以 Bedrock 用例默认不会自动补全
+- `FYAPI_E2E_BEDROCK_MODEL` 必须实际走 AWS Bedrock Claude 渠道
+- `FYAPI_E2E_CLAUDE_MODEL` 必须实际走 Claude 兼容链路
 - 这是黑盒验证，不依赖数据库或管理端 API
