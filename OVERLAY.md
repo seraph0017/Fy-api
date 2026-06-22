@@ -40,6 +40,7 @@
   - `controller/log_export.go`（ExportAllLogs / ExportUserLogs / writeLogsCSV）
   - `model/log_export.go`（GetAllLogsForExport / GetUserLogsForExport / attachChannelNames）
 - **修改文件**：`router/api-router.go`（注册 /api/log/export + /api/log/self/export，仅 2 行）
+- **导出字段**：CSV 镜像使用日志表格，包含 request_id，并从 `logs.other` 解析 `cache_tokens` / `cache_write_tokens` / `cache_creation_tokens*` 导出“缓存读”“缓存写”token 列
 - **冲突风险**：低（独立文件 + 2 行 router 注册）
 - **Merge 策略**：router 两行加在 `logRoute.GET("/self/search", ...)` 之后，若 upstream 也改了 logRoute，手动对齐位置
 

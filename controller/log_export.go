@@ -24,7 +24,64 @@ import (
 
 var csvHeader = []string{
 	"时间", "渠道", "用户", "令牌", "分组", "类型", "模型",
-	"用时/首字", "输入", "输出", "Quota", "人民币", "美金", "IP", "重试", "request_id", "详情",
+	"用时/首字", "输入", "缓存读", "缓存写", "输出", "Quota", "人民币", "美金", "IP", "重试", "request_id", "详情",
+}
+
+type logCacheTokenSummary struct {
+	cacheReadTokens  int
+	cacheWriteTokens int
+}
+
+func parsePositiveInt(value interface{}) int {
+	switch v := value.(type) {
+	case int:
+		if v > 0 {
+			return v
+		}
+	case int64:
+		if v > 0 {
+			return int(v)
+		}
+	case float64:
+		if v > 0 {
+			return int(v)
+		}
+	case string:
+		parsed, err := strconv.Atoi(v)
+		if err == nil && parsed > 0 {
+			return parsed
+		}
+	}
+	return 0
+}
+
+func getLogCacheTokenSummary(otherStr string) logCacheTokenSummary {
+	other, err := common.StrToMap(otherStr)
+	if err != nil || other == nil {
+		return logCacheTokenSummary{}
+	}
+	cacheReadTokens := parsePositiveInt(other["cache_tokens"])
+	cacheWriteTokens := parsePositiveInt(other["cache_write_tokens"])
+	if cacheWriteTokens == 0 {
+		cacheCreationTokens5m := parsePositiveInt(other["cache_creation_tokens_5m"])
+		cacheCreationTokens1h := parsePositiveInt(other["cache_creation_tokens_1h"])
+		if cacheCreationTokens5m > 0 || cacheCreationTokens1h > 0 {
+			cacheWriteTokens = cacheCreationTokens5m + cacheCreationTokens1h
+		} else {
+			cacheWriteTokens = parsePositiveInt(other["cache_creation_tokens"])
+		}
+	}
+	return logCacheTokenSummary{
+		cacheReadTokens:  cacheReadTokens,
+		cacheWriteTokens: cacheWriteTokens,
+	}
+}
+
+func formatPositiveInt(value int) string {
+	if value > 0 {
+		return strconv.Itoa(value)
+	}
+	return ""
 }
 
 // writeLogsCSV streams the given logs as a CSV file in the HTTP response.
@@ -61,6 +118,9 @@ func writeLogsCSV(c *gin.Context, logs []*model.Log) {
 		if log.PromptTokens > 0 {
 			promptStr = strconv.Itoa(log.PromptTokens)
 		}
+		cacheTokenSummary := getLogCacheTokenSummary(log.Other)
+		cacheReadStr := formatPositiveInt(cacheTokenSummary.cacheReadTokens)
+		cacheWriteStr := formatPositiveInt(cacheTokenSummary.cacheWriteTokens)
 		completionStr := ""
 		if log.CompletionTokens > 0 {
 			completionStr = strconv.Itoa(log.CompletionTokens)
@@ -85,6 +145,8 @@ func writeLogsCSV(c *gin.Context, logs []*model.Log) {
 			log.ModelName,          // 模型
 			useTimeStr,             // 用时/首字
 			promptStr,              // 输入
+			cacheReadStr,           // 缓存读
+			cacheWriteStr,          // 缓存写
 			completionStr,          // 输出
 			quotaStr,               // Quota
 			cnyStr,                 // 人民币
