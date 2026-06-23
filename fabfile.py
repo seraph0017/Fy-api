@@ -24,12 +24,14 @@ Common usage from the Fy-api repo root:
 Known targets:
     cn: ssh -i ~/.ssh/tracenex_XN.pem -p 58422 root@8.136.146.211
     sg: ssh -i ~/.ssh/AI_tracenex.pem -p 58422 root@47.236.133.70
+    hk: ssh root@47.83.137.1
+    hk-test: ssh root@47.86.175.72
     cn-test: ssh -p 58422 root@8.156.88.148
     sg-test: ssh root@8.222.175.17
 
 Override with environment variables when needed:
     FYAPI_TARGET
-    FYAPI_HOST, FYAPI_PORT, FYAPI_USER, FYAPI_KEY
+    FYAPI_HOST, FYAPI_PORT, FYAPI_USER, FYAPI_KEY, FYAPI_PASSWORD
     FYAPI_REPO_URL, FYAPI_SRC_DIR, FYAPI_BUILD_DIR
     FYAPI_REGISTRY, FYAPI_NAMESPACE, FYAPI_REPO
 """
@@ -71,6 +73,37 @@ TARGETS = {
         "namespace": "ai_transnext",
         "repo": "fy-api",
         "repo_url": "https://github.com/seraph0017/Fy-api.git",
+    },
+    "hk": {
+        "host": "47.83.137.1",
+        "port": 22,
+        "user": "root",
+        "key": "",
+        "password": "",
+        "app_dir": "/opt/fy-api",
+        "src_dir": "/root/Fy-api",
+        "build_dir": "/tmp/fy-api-build",
+        "registry": "",
+        "namespace": "",
+        "repo": "fy-api",
+        "repo_url": "https://github.com/seraph0017/Fy-api.git",
+    },
+    "hk-test": {
+        "host": "47.86.175.72",
+        "port": 22,
+        "user": "root",
+        "key": "",
+        "password": "",
+        "app_dir": "/opt/fy-api",
+        "src_dir": "/root/Fy-api",
+        "build_dir": "/tmp/fy-api-build",
+        "registry": "",
+        "namespace": "",
+        "repo": "fy-api",
+        "repo_url": "https://github.com/seraph0017/Fy-api.git",
+        "nginx_conf": "/etc/nginx/conf.d/fy-api.conf",
+        "mem": "6g",
+        "cpus": "4",
     },
     "cn-test": {
         "host": "8.156.88.148",
@@ -136,6 +169,7 @@ def _config(target: str | None = None) -> dict[str, object]:
         "port": "FYAPI_PORT",
         "user": "FYAPI_USER",
         "key": "FYAPI_KEY",
+        "password": "FYAPI_PASSWORD",
         "app_dir": "FYAPI_APP_DIR",
         "src_dir": "FYAPI_SRC_DIR",
         "build_dir": "FYAPI_BUILD_DIR",
@@ -150,6 +184,7 @@ def _config(target: str | None = None) -> dict[str, object]:
             cfg[key] = int(value) if key == "port" else value
 
     cfg["key"] = os.path.expanduser(str(cfg.get("key") or ""))
+    cfg["password"] = str(cfg.get("password") or "")
     cfg["env_file"] = os.getenv("FYAPI_ENV_FILE", f"{cfg['app_dir']}/config/fy-api.env")
     cfg.setdefault("nginx_conf", "/etc/nginx/conf.d/fy-api.conf")
     if os.getenv("FYAPI_NGINX_CONF"):
@@ -169,6 +204,9 @@ def _connect(cfg: dict[str, object]) -> Connection:
     key = str(cfg.get("key") or "")
     if key:
         connect_kwargs["key_filename"] = key
+    password = str(cfg.get("password") or "")
+    if password:
+        connect_kwargs["password"] = password
     return Connection(
         host=str(cfg["host"]),
         user=str(cfg["user"]),
