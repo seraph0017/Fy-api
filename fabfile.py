@@ -24,8 +24,8 @@ Common usage from the Fy-api repo root:
 Known targets:
     cn: ssh -i ~/.ssh/tracenex_XN.pem -p 58422 root@8.136.146.211
     sg: ssh -i ~/.ssh/AI_tracenex.pem -p 58422 root@47.236.133.70
-    hk: ssh root@47.83.137.1
-    hk-test: ssh root@47.86.175.72
+    hk: ssh -p 58422 root@47.83.137.1
+    hk-test: ssh -p 58422 root@47.86.175.72
     cn-test: ssh -p 58422 root@8.156.88.148
     sg-test: ssh root@8.222.175.17
 
@@ -76,7 +76,7 @@ TARGETS = {
     },
     "hk": {
         "host": "47.83.137.1",
-        "port": 22,
+        "port": 58422,
         "user": "root",
         "key": "",
         "password": "",
@@ -90,7 +90,7 @@ TARGETS = {
     },
     "hk-test": {
         "host": "47.86.175.72",
-        "port": 22,
+        "port": 58422,
         "user": "root",
         "key": "",
         "password": "",
