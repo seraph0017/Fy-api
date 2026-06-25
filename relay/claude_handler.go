@@ -107,6 +107,16 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		info.UpstreamModelName = request.Model
 	}
 
+	// Opus 4.7/4.8 always run adaptive thinking internally — temperature,
+	// top_p, top_k are never accepted regardless of whether the user explicitly
+	// enabled thinking via a suffix. Strip unconditionally.
+	if strings.HasPrefix(request.Model, "claude-opus-4-7") ||
+		strings.HasPrefix(request.Model, "claude-opus-4-8") {
+		request.Temperature = nil
+		request.TopP = nil
+		request.TopK = nil
+	}
+
 	if info.ChannelSetting.SystemPrompt != "" {
 		if request.System == nil {
 			request.SetStringSystem(info.ChannelSetting.SystemPrompt)
