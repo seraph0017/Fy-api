@@ -72,9 +72,11 @@ func TestConvertOpenAIRequest_StripsReasoningForNonReasoningModels(t *testing.T)
 			require.NoError(t, err)
 
 			result := got.(*dto.GeneralOpenAIRequest)
+			// The `reasoning` JSON object is always stripped in Chat Completions
+			// (it's a Responses API parameter).
+			assert.Nil(t, result.Reasoning, "Reasoning object should always be stripped in Chat Completions")
 			if tt.expectStripped {
 				assert.Empty(t, result.ReasoningEffort, "ReasoningEffort should be stripped")
-				assert.Nil(t, result.Reasoning, "Reasoning should be stripped")
 			} else {
 				assert.NotEmpty(t, result.ReasoningEffort, "ReasoningEffort should be kept")
 			}
