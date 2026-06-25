@@ -223,6 +223,32 @@ func IsOpenAIGPT5Model(modelName string) bool {
 	return strings.HasPrefix(modelName, "gpt-5")
 }
 
+func IsOpenAIImageModel(modelName string) bool {
+	return strings.HasPrefix(modelName, "gpt-image-") ||
+		strings.EqualFold(modelName, "chatgpt-image-latest")
+}
+
+// IsOpenAIModelSupportReasoning returns true if the model supports reasoning/reasoning_effort parameters.
+// o-series always support reasoning. For GPT-5 family, only flagship variants (gpt-5, gpt-5.4, gpt-5.5+)
+// support reasoning; lighter variants (gpt-5.1, gpt-5.2, gpt-5.3, *-mini) do not.
+func IsOpenAIModelSupportReasoning(modelName string) bool {
+	if IsOpenAIReasoningOModel(modelName) {
+		return true
+	}
+	if !IsOpenAIGPT5Model(modelName) {
+		return false
+	}
+	if strings.Contains(modelName, "mini") {
+		return false
+	}
+	if strings.HasPrefix(modelName, "gpt-5.1") ||
+		strings.HasPrefix(modelName, "gpt-5.2") ||
+		strings.HasPrefix(modelName, "gpt-5.3") {
+		return false
+	}
+	return true
+}
+
 func (r *GeneralOpenAIRequest) GetSystemRoleName() string {
 	if IsOpenAIReasoningOModel(r.Model) {
 		if !strings.HasPrefix(r.Model, "o1-mini") && !strings.HasPrefix(r.Model, "o1-preview") {
