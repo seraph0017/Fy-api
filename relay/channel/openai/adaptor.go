@@ -349,6 +349,33 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 		}
 	}
 
+	// Strip reasoning params for models that don't support them
+	if !dto.IsOpenAIModelSupportReasoning(info.UpstreamModelName) {
+		request.Reasoning = nil
+		request.ReasoningEffort = ""
+	}
+
+	// Enforce minimum max_output_tokens (OpenAI requires >= 16)
+	const minMaxTokens = 16
+	if v := lo.FromPtrOr(request.MaxCompletionTokens, uint(0)); v > 0 && v < minMaxTokens {
+		request.MaxCompletionTokens = lo.ToPtr(uint(minMaxTokens))
+	}
+	if v := lo.FromPtrOr(request.MaxTokens, uint(0)); v > 0 && v < minMaxTokens {
+		request.MaxTokens = lo.ToPtr(uint(minMaxTokens))
+	}
+
+	// Truncate tool_calls arrays that exceed OpenAI's maximum of 128
+	const maxToolCalls = 128
+	for i := range request.Messages {
+		if request.Messages[i].ToolCalls == nil {
+			continue
+		}
+		toolCalls := request.Messages[i].ParseToolCalls()
+		if len(toolCalls) > maxToolCalls {
+			request.Messages[i].SetToolCalls(toolCalls[:maxToolCalls])
+		}
+	}
+
 	return request, nil
 }
 
@@ -624,6 +651,18 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommo
 	if info != nil && request.Reasoning != nil && request.Reasoning.Effort != "" {
 		info.ReasoningEffort = request.Reasoning.Effort
 	}
+
+	// Strip reasoning for non-reasoning models
+	if !dto.IsOpenAIModelSupportReasoning(request.Model) {
+		request.Reasoning = nil
+	}
+
+	// Enforce minimum max_output_tokens (OpenAI requires >= 16)
+	const minMaxTokens = 16
+	if v := lo.FromPtrOr(request.MaxOutputTokens, uint(0)); v > 0 && v < minMaxTokens {
+		request.MaxOutputTokens = lo.ToPtr(uint(minMaxTokens))
+	}
+
 	return request, nil
 }
 
