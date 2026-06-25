@@ -349,9 +349,11 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 		}
 	}
 
-	// Strip reasoning params for models that don't support them
+	// The `reasoning` JSON object is a Responses API parameter; Chat Completions
+	// only accepts the `reasoning_effort` string. Always strip the object.
+	request.Reasoning = nil
+	// Strip reasoning_effort for models that don't support it.
 	if !dto.IsOpenAIModelSupportReasoning(info.UpstreamModelName) {
-		request.Reasoning = nil
 		request.ReasoningEffort = ""
 	}
 
