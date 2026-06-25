@@ -16,6 +16,7 @@ import "strings"
 // TODO(review): 临时黑名单，随 Bedrock 侧策略变化定期 review，确认是否需要增减条目。
 var bedrockTemperatureDeprecatedModels = []string{
 	"claude-opus-4-7",
+	"claude-opus-4-8",
 }
 
 func isTemperatureDeprecatedForBedrock(modelName string) bool {
@@ -38,6 +39,8 @@ func sanitizeBedrockSamplingParams(modelName string, request *AwsClaudeRequest) 
 	}
 	if isTemperatureDeprecatedForBedrock(modelName) {
 		request.Temperature = nil
+		request.TopP = nil
+		request.TopK = nil
 		return
 	}
 	if request.Temperature != nil {
@@ -58,6 +61,8 @@ func sanitizeBedrockSamplingParamsRaw(modelName string, data map[string]any) {
 	}
 	if isTemperatureDeprecatedForBedrock(modelName) {
 		delete(data, "temperature")
+		delete(data, "top_p")
+		delete(data, "top_k")
 		return
 	}
 	if temp, hasTemp := data["temperature"]; hasTemp {
