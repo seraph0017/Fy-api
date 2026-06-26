@@ -71,7 +71,7 @@
 ### B-6 [deploy] Fabric 服务端构建发布自动化
 - **新增文件**：`fabfile.py`
 - **用途**：本地只执行 Fabric；远端 ECS 在 `/root/Fy-api` 拉取 Git ref，用 `git archive` 生成干净临时构建目录后 Podman 构建镜像、推送 ACR，再调用 `scripts/prod/06-deploy-blue-green.sh` 蓝绿发布；也支持新加坡新机 `bootstrap-system`
-- **默认连接**：`cn=root@8.136.146.211:58422`（`~/.ssh/tracenex_XN.pem`），`sg=root@47.236.133.70:58422`（`~/.ssh/AI_tracenex.pem`，ACR namespace `ai_transnext`），`cn-test=root@8.156.88.148:58422`，`sg-test=root@8.222.175.17`；默认源码目录 `/root/Fy-api`；均可用 `FYAPI_*` 环境变量覆盖
+- **默认连接**：`cn=root@8.136.146.211:58422`（`~/.ssh/tracenex_XN.pem`），`hk=root@47.83.137.1:58422`，`cn-test=root@8.156.88.148:58422`，`hk-test=root@47.86.175.72:58422`；`sg` / `sg-test` 保留在 `fabfile.py` 里仅作迁移历史兼容入口；默认源码目录 `/root/Fy-api`；均可用 `FYAPI_*` 环境变量覆盖
 - **冲突风险**：极低（新增根目录运维入口，不改 upstream 业务代码）
 - **Merge 策略**：保留文件；若部署脚本参数变化，同步更新 `deploy` / `release` 任务
 
@@ -218,6 +218,24 @@
 - **行为**：`fy-image-loadtest` 遇到 `余额不足` / `额度不足` / `insufficient quota` 等错误时，立刻停止继续发新请求，已在飞请求自然收尾后输出最终报告
 - **冲突风险**：低（仅 benchmark 子树）
 
+### B-16 [responses] Codex/OpenAI Responses 兼容清洗 + 失效密文单次降级重试
+- **新增文件**：
+  - `relay/common/openai_responses_sanitizer.go`（预清洗 `input[*].metadata`、`input[*].internal_chat_message_metadata_passthrough`；按需剥离 `encrypted_content`）
+  - `relay/responses_retry.go`（识别 `encrypted content ... could not be verified`，触发单次去密文重试）
+  - `relay/responses_retry_test.go`
+- **修改文件**：
+  - `relay/responses_handler.go`
+  - `relay/chat_completions_via_responses.go`
+  - `relay/common/override_test.go`
+- **背景**：2026-06-26 HK 生产日志显示 `/v1/responses` 高频 400 主要分三类：`encrypted content could not be verified`、`input[*].metadata`、`input[*].internal_chat_message_metadata_passthrough`。上游 `new-api` 已有相关 issue（如 #4662 / #3240），但 `upstream/main` 尚无通用修复。TraceNex overlay 先做兼容兜底。
+- **行为**：
+  1. 正常转发前仅移除 OpenAI Responses 不接受的客户端内部字段；
+  2. 若上游明确返回 `400 + encrypted content could not be verified`，则仅重试一次，并在重试时移除失效 `encrypted_content` 块，让请求退化为明文上下文继续执行；
+  3. 非该特定错误不触发自动重试。
+- **取舍**：这是 availability-first 兜底，不会尝试“解密”或伪造客户端密文状态；代价是重试后可能丢失隐藏推理上下文，但优先避免整次请求直接 400。
+- **冲突风险**：中（`responses` 路径仍属上游活跃区域）
+- **Merge 策略**：若 upstream 后续合入原生 `encrypted_content` 亲和 / 重试支持，优先采用 upstream；保留本地“只对特定 400 单次降级”的行为语义直到 upstream 证明等价。
+
 ### B-15.1 [benchmark/image] 图片协议一致性 + 质量 + 安全测试套件
 - **新增目录**：`scripts/channel-benchmark/py/fy_image_conformance/`
   - `cli.py` / `config.py` / `client.py` / `probe.py` / `budget.py` / `report.py`
@@ -302,7 +320,7 @@
   - `relay/channel/aws/bedrock_temperature_filter_test.go`（覆盖：黑名单模型剥离、非黑名单模型保留、raw map 路径）
 - **修改文件**：
   - `relay/channel/aws/relay-aws.go`（`doAwsClientRequest` +1 行 `stripBedrockDeprecatedTemperature`；`buildAwsRequestBody` +1 行 `stripBedrockDeprecatedTemperatureRaw`）
-- **背景**：SG 生产 momo 客户流量出现 400 `ValidationException: 'temperature' is deprecated for this model`（claude-opus-4-7 via Bedrock channel #27）。Bedrock 对部分新模型不再接受 temperature 参数。
+- **背景**：SG 生产 momo 客户流量出现 400 `ValidationException: 'temperature' is deprecated for this model`（claude-opus-4-7 via Bedrock channel #27；2026-06-25 海外测试 `claude-opus-4-8` 也返回同类错误）。Bedrock 对部分新模型不再接受 temperature 参数。
 - **行为**：在发送请求到 Bedrock 前，根据模型黑名单剥离 temperature 字段，静默丢弃而非返回 400 给客户端。
 - **冲突风险**：极低（独立新文件 + relay-aws.go 两处各 +1 行；与 B-17 同一区域但不同行）
 

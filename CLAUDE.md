@@ -87,10 +87,10 @@ fab status --target=cn
 fab logs --target=cn --tail=200
 fab release --target=cn --tag=v0.9.8 --ref=origin/main
 
-fab info --target=sg
-fab status --target=sg
-fab logs --target=sg --tail=200
-fab deploy --target=sg --tag=sg-5d733d85
+fab info --target=hk
+fab status --target=hk
+fab logs --target=hk --tail=200
+fab deploy --target=hk --tag=hk-<tag>
 
 fab preflight --target=cn-test
 
@@ -102,11 +102,11 @@ Known Fabric targets:
 | target | Purpose | SSH | Notes |
 |--------|---------|-----|-------|
 | `cn` | Hangzhou production | `root@8.136.146.211:58422` via `~/.ssh/tracenex_XN.pem` | Builds from `/root/Fy-api`, runtime config in `/opt/fy-api/config/fy-api.env` |
-| `sg` | Singapore production | `root@47.236.133.70:58422` via `~/.ssh/AI_tracenex.pem` | Public URL `https://api.aitracenex.com`; ACR namespace `ai_transnext`; active blue/green behind Nginx |
+| `hk` | Hong Kong production | `root@47.83.137.1:58422` via default SSH key/agent | Fy-api overlay: replaces the old `sg` production target |
 | `cn-test` | Chengdu test env | `root@8.156.88.148:58422` via default SSH key/agent | Local build + deploy (no ACR); nginx at `/etc/nginx/conf.d/tracenex-test.conf`; domains `*-test.tracenex.cn` |
-| `sg-test` | SG test env | `root@8.222.175.17` via default SSH key/agent | Shares legacy host; local build + deploy (no ACR) |
+| `hk-test` | Hong Kong test env | `root@47.86.175.72:58422` via default SSH key/agent | Fy-api overlay: replaces the old `sg-test` target; local build + deploy (no ACR) |
 
-Fabric `release` does: server git fetch/checkout -> `git archive` to `/tmp/fy-api-build` -> server Podman build -> ACR push -> `scripts/prod/06-deploy-blue-green.sh`. For SG, current deployed image tag is `sg-5d733d85`.
+Fabric `release` does: server git fetch/checkout -> `git archive` to `/tmp/fy-api-build` -> server Podman build -> ACR push -> `scripts/prod/06-deploy-blue-green.sh`. Fy-api overlay: active non-CN production/test targets are now `hk` / `hk-test`; keep SG references below only for migration history.
 
 ### Migration context
 

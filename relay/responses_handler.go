@@ -71,11 +71,13 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 	}
 	adaptor.Init(info)
 	var requestBody io.Reader
+	var requestJSON []byte
 	if model_setting.GetGlobalSettings().PassThroughRequestEnabled || info.ChannelSetting.PassThroughBodyEnabled {
 		storage, err := common.GetBodyStorage(c)
 		if err != nil {
 			return types.NewError(err, types.ErrorCodeReadRequestBodyFailed, types.ErrOptionWithSkipRetry())
 		}
+		requestJSON = outboundRequestJSONFromBodyStorage(storage)
 		requestBody = common.ReaderOnly(storage)
 	} else {
 		convertedRequest, err := adaptor.ConvertOpenAIResponsesRequest(c, info, *request)
@@ -93,6 +95,12 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 		if err != nil {
 			return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
 		}
+		// Fy-api overlay: strip known Codex/OpenAI client-internal fields that
+		// upstream public Responses schema rejects (e.g. input[*].metadata).
+		jsonData, err = relaycommon.SanitizeOpenAIResponsesRequest(jsonData)
+		if err != nil {
+			return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+		}
 
 		// apply param override
 		if len(info.ParamOverride) > 0 {
@@ -100,9 +108,16 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 			if err != nil {
 				return newAPIErrorFromParamOverride(err)
 			}
+			// Fy-api overlay: param override may reintroduce client-internal
+			// fields, so run the lightweight Responses sanitizer again.
+			jsonData, err = relaycommon.SanitizeOpenAIResponsesRequest(jsonData)
+			if err != nil {
+				return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+			}
 		}
 
 		logger.LogDebug(c, "requestBody: %s", jsonData)
+		requestJSON = append([]byte(nil), jsonData...)
 		body, size, closer, err := relaycommon.NewOutboundJSONBody(jsonData)
 		if err != nil {
 			return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
@@ -126,9 +141,21 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 
 		if httpResp.StatusCode != http.StatusOK {
 			newAPIError = service.RelayErrorHandler(c.Request.Context(), httpResp, false)
-			// reset status code 重置状态码
-			service.ResetStatusCode(newAPIError, statusCodeMappingStr)
-			return newAPIError
+			// Fy-api overlay: for the specific OpenAI/Codex 400
+			// "encrypted content ... could not be verified", retry once after
+			// dropping stale encrypted_content blocks so the request can degrade
+			// to plaintext context instead of hard-failing.
+			if retryResp, retryErr, retried := retryResponsesRequestWithoutEncryptedContent(c, info, adaptor, requestJSON, newAPIError); retried {
+				if retryErr != nil {
+					service.ResetStatusCode(retryErr, statusCodeMappingStr)
+					return retryErr
+				}
+				httpResp = retryResp
+			} else {
+				// reset status code 重置状态码
+				service.ResetStatusCode(newAPIError, statusCodeMappingStr)
+				return newAPIError
+			}
 		}
 	}
 

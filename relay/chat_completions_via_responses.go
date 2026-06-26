@@ -123,6 +123,12 @@ func chatCompletionsViaResponses(c *gin.Context, info *relaycommon.RelayInfo, ad
 	if err != nil {
 		return nil, types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
 	}
+	// Fy-api overlay: strip known Codex/OpenAI client-internal fields that
+	// upstream public Responses schema rejects before forwarding.
+	jsonData, err = relaycommon.SanitizeOpenAIResponsesRequest(jsonData)
+	if err != nil {
+		return nil, types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+	}
 
 	body, size, closer, err := relaycommon.NewOutboundJSONBody(jsonData)
 	if err != nil {
@@ -148,8 +154,21 @@ func chatCompletionsViaResponses(c *gin.Context, info *relaycommon.RelayInfo, ad
 	info.IsStream = info.IsStream || strings.HasPrefix(httpResp.Header.Get("Content-Type"), "text/event-stream")
 	if httpResp.StatusCode != http.StatusOK {
 		newApiErr := service.RelayErrorHandler(c.Request.Context(), httpResp, false)
-		service.ResetStatusCode(newApiErr, statusCodeMappingStr)
-		return nil, newApiErr
+		// Fy-api overlay: for the specific OpenAI/Codex 400
+		// "encrypted content ... could not be verified", retry once after
+		// dropping stale encrypted_content blocks so chat->responses
+		// compatibility mode can fall back to plaintext context.
+		if retryResp, retryErr, retried := retryResponsesRequestWithoutEncryptedContent(c, info, adaptor, jsonData, newApiErr); retried {
+			if retryErr != nil {
+				service.ResetStatusCode(retryErr, statusCodeMappingStr)
+				return nil, retryErr
+			}
+			httpResp = retryResp
+			info.IsStream = info.IsStream || strings.HasPrefix(httpResp.Header.Get("Content-Type"), "text/event-stream")
+		} else {
+			service.ResetStatusCode(newApiErr, statusCodeMappingStr)
+			return nil, newApiErr
+		}
 	}
 
 	if info.IsStream {

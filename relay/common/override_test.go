@@ -2147,6 +2147,62 @@ func TestRemoveDisabledFieldsContextManagement(t *testing.T) {
 	})
 }
 
+func TestSanitizeOpenAIResponsesRequest(t *testing.T) {
+	input := `{
+		"model":"gpt-5.5",
+		"input":[
+			{
+				"role":"user",
+				"metadata":{"conversation_id":"abc"},
+				"internal_chat_message_metadata_passthrough":{"foo":"bar"},
+				"content":[
+					{"type":"input_text","text":"hello"}
+				]
+			},
+			{"type":"reasoning","encrypted_content":"gAAA..."},
+			{"role":"assistant","content":[{"type":"output_text","text":"visible"},{"type":"encrypted_content","encrypted_content":"gAAA..."}]}
+		]
+	}`
+
+	out, err := SanitizeOpenAIResponsesRequest([]byte(input))
+	require.NoError(t, err)
+	assertJSONEqual(t, `{
+		"model":"gpt-5.5",
+		"input":[
+			{
+				"role":"user",
+				"content":[
+					{"type":"input_text","text":"hello"}
+				]
+			},
+			{"type":"reasoning","encrypted_content":"gAAA..."},
+			{"role":"assistant","content":[{"type":"output_text","text":"visible"},{"type":"encrypted_content","encrypted_content":"gAAA..."}]}
+		]
+	}`, string(out))
+}
+
+func TestStripEncryptedContentFromOpenAIResponsesRequest(t *testing.T) {
+	input := `{
+		"model":"gpt-5.5",
+		"input":[
+			{"role":"user","content":[{"type":"input_text","text":"hello"}]},
+			{"type":"reasoning","encrypted_content":"gAAA..."},
+			{"role":"assistant","content":[{"type":"output_text","text":"visible"},{"type":"encrypted_content","encrypted_content":"gAAA..."}]}
+		]
+	}`
+
+	out, changed, err := StripEncryptedContentFromOpenAIResponsesRequest([]byte(input))
+	require.NoError(t, err)
+	require.True(t, changed)
+	assertJSONEqual(t, `{
+		"model":"gpt-5.5",
+		"input":[
+			{"role":"user","content":[{"type":"input_text","text":"hello"}]},
+			{"role":"assistant","content":[{"type":"output_text","text":"visible"}]}
+		]
+	}`, string(out))
+}
+
 func TestApplyParamOverrideWithRelayInfoRecordsOperationAuditInDebugMode(t *testing.T) {
 	originalDebugEnabled := common2.DebugEnabled
 	common2.DebugEnabled = true

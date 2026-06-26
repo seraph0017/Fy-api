@@ -73,10 +73,10 @@ conda run -n fy-api-deploy fab release --target=cn --tag=v0.9.8 --ref=origin/mai
 conda run -n fy-api-deploy fab deploy --target=cn --tag=v0.9.8
 conda run -n fy-api-deploy fab rollback --target=cn --tag=v0.9.7
 
-conda run -n fy-api-deploy fab info --target=sg
-conda run -n fy-api-deploy fab status --target=sg
-conda run -n fy-api-deploy fab logs --target=sg --tail=200
-conda run -n fy-api-deploy fab deploy --target=sg --tag=sg-5d733d85
+conda run -n fy-api-deploy fab info --target=hk
+conda run -n fy-api-deploy fab status --target=hk
+conda run -n fy-api-deploy fab logs --target=hk --tail=200
+conda run -n fy-api-deploy fab deploy --target=hk --tag=hk-<tag>
 
 conda run -n fy-api-deploy fab preflight --target=cn-test
 ```
@@ -84,9 +84,9 @@ conda run -n fy-api-deploy fab preflight --target=cn-test
 Known targets:
 
 - `cn`: Hangzhou production, `root@8.136.146.211:58422`, key `~/.ssh/tracenex_XN.pem`.
-- `sg`: Singapore production, `root@47.236.133.70:58422`, key `~/.ssh/AI_tracenex.pem`, public URL `https://api.aitracenex.com`, ACR namespace `ai_transnext`.
+- `hk`: Hong Kong production, `root@47.83.137.1:58422`. Fy-api overlay: replaces the old `sg` production target.
 - `cn-test`: Chengdu test env, `root@8.156.88.148:58422`, default SSH key/agent, domains `*-test.tracenex.cn`.
-- `sg-test`: SG test env, `root@8.222.175.17`, default SSH key/agent.
+- `hk-test`: Hong Kong test env, `root@47.86.175.72:58422`. Fy-api overlay: replaces the old `sg-test` target.
 
 ### Upstream sync orientation
 
