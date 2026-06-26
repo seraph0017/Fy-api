@@ -223,10 +223,12 @@
   - `relay/common/openai_responses_sanitizer.go`（预清洗 `input[*].metadata`、`input[*].internal_chat_message_metadata_passthrough`；按需剥离 `encrypted_content`）
   - `relay/responses_retry.go`（识别 `encrypted content ... could not be verified`，触发单次去密文重试）
   - `relay/responses_retry_test.go`
+  - `tests/e2e/responses_regression_e2e.py`（`hk-test` 黑盒验证 metadata 清洗与密文单次降级重试）
 - **修改文件**：
   - `relay/responses_handler.go`
   - `relay/chat_completions_via_responses.go`
   - `relay/common/override_test.go`
+  - `tests/e2e/README.md`
 - **背景**：2026-06-26 HK 生产日志显示 `/v1/responses` 高频 400 主要分三类：`encrypted content could not be verified`、`input[*].metadata`、`input[*].internal_chat_message_metadata_passthrough`。上游 `new-api` 已有相关 issue（如 #4662 / #3240），但 `upstream/main` 尚无通用修复。TraceNex overlay 先做兼容兜底。
 - **行为**：
   1. 正常转发前仅移除 OpenAI Responses 不接受的客户端内部字段；
