@@ -19,8 +19,41 @@ CONF_FILE=/etc/nginx/conf.d/fy-api.conf
 CERT_DIR=/etc/letsencrypt/live/$DOMAIN
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 LOG_FORMAT_SNIPPET="$SCRIPT_DIR/nginx/00-fy-api-log-format.conf"
+NGINX_MAIN_CONF=/etc/nginx/nginx.conf
 
 [ -f "$LOG_FORMAT_SNIPPET" ] || err "缺少 nginx 片段文件: $LOG_FORMAT_SNIPPET (请 git pull 或检查 scripts/prod/nginx/)"
+[ -f "$NGINX_MAIN_CONF" ] || err "缺少 nginx 主配置: $NGINX_MAIN_CONF"
+
+# Fy-api overlay: HK 生产环境曾因默认 worker_connections=768 在管理台并发
+# 加载静态资源时触发 "worker_connections are not enough while connecting to
+# upstream"。初始化阶段直接把连接上限和 nofile 上限抬高，避免新机回落。
+log "预处理: 提升 Nginx worker_connections / worker_rlimit_nofile ..."
+python3 - <<'PY'
+import re
+from pathlib import Path
+
+path = Path("/etc/nginx/nginx.conf")
+text = path.read_text()
+
+if "worker_rlimit_nofile" not in text:
+    text, count = re.subn(
+        r"(?m)^(worker_processes\s+[^;]+;\s*)$",
+        r"\1worker_rlimit_nofile 65535;\n",
+        text,
+        count=1,
+    )
+    if count == 0:
+        text = "worker_rlimit_nofile 65535;\n" + text
+
+text = re.sub(
+    r"worker_connections\s+(?:768|1024);",
+    "worker_connections 8192;",
+    text,
+    count=1,
+)
+
+path.write_text(text)
+PY
 
 # ─────────────────────────────────────────────────────────
 # 1) 先写一个 HTTP-only 临时配置,让 certbot 能走 HTTP-01 challenge
