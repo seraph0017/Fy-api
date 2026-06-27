@@ -75,6 +75,13 @@
 - **冲突风险**：极低（新增根目录运维入口，不改 upstream 业务代码）
 - **Merge 策略**：保留文件；若部署脚本参数变化，同步更新 `deploy` / `release` 任务
 
+### B-6.1 [deploy/nginx] 初始化时提升 Nginx upstream 连接上限
+- **修改文件**：`scripts/prod/03-setup-nginx.sh`
+- **背景**：2026-06-26 HK 生产环境出现管理台静态资源与 API 请求被 Nginx 直接打成 `500/502`，错误日志为 `worker_connections are not enough while connecting to upstream`。机器本身 `ulimit -n` 足够，但 `/etc/nginx/nginx.conf` 仍停留在默认 `worker_connections 768`。
+- **行为**：在写站点配置前，脚本会把主配置中的 `worker_connections` 提升到 `8192`，并补上 `worker_rlimit_nofile 65535`，避免新机或重装后回落到过低默认值。
+- **冲突风险**：低（仅修改运维脚本，不影响业务代码）
+- **Merge 策略**：若 upstream 后续也开始管理 nginx 主配置，保留本条“提升连接上限”的语义即可，具体数值按线上压测结果再定。
+
 ### B-7 [benchmark] 渠道基准测试工具链（channel-benchmark）
 - **新增目录**：`scripts/channel-benchmark/`
   - `README.md` —— 顶层导航，解释 Go / Python 两套工具的分工
