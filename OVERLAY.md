@@ -518,13 +518,16 @@
 
 ### F-1 [brand] 浏览器 tab + icon
 - **文件**：`web/classic/index.html`
-- **修改**：`<title>TraceNex</title>` + `<link rel="icon" href="/new_logo.png?v=2" />`
+- **修改**：静态首屏 fallback 使用中性 `<title>AI Gateway</title>` + `<link rel="icon" href="/logo.png?v=2" />`，真实品牌由运行时 `/api/status` 覆盖
+- **运行时同步**：`web/classic/src/components/layout/PageLayout.jsx` 在读取 `/api/status` 后，用返回的 `system_name` / `logo` 更新 `document.title` 和 favicon；首次渲染先应用 localStorage 缓存的品牌，支持 HK 等环境只通过后台 `SystemName` / `Logo` 配置换名换图标
+- **附带改动**：`web/classic/src/components/layout/Footer.jsx`、`web/classic/src/pages/About/index.jsx` 的默认品牌展示改为读取 runtime `systemName`，不再写死 TraceNex
 - **冲突风险**：中（上游会改 meta description）
-- **Merge 策略**：title 和 icon 两处坚持用 TraceNex；meta description 可接受 upstream
+- **Merge 策略**：静态 title/icon 保持中性兜底；运行时同步逻辑必须保留；meta description 可接受 upstream
 
 ### F-2 [brand] Logo 和 favicon
 - **新增**：`web/classic/public/new_logo.png` (3.4 MB)
-- **替换**：`web/classic/public/favicon.ico`
+- **新增**：`web/classic/public/mobile-site-logo.svg`，供 HK/移动站点环境在后台 `Logo=/mobile-site-logo.svg` 时使用
+- **新增/替换**：`web/classic/public/favicon.ico`，避免浏览器直接请求 `/favicon.ico` 时落到 SPA HTML
 - **冲突风险**：低（上游偶尔更新 logo.png，我们用 new_logo.png 独立）
 - **注意**：v1.0 merge 时 git 的 directory-rename 启发式会把 public 资源建议到 `web/default/public/`，**必须手动改到 `web/classic/public/`**
 
@@ -552,6 +555,7 @@
 - **修改文件**：`web/classic/src/App.jsx`
   - 第 ~59 行：`const FyApiDocs = lazy(() => import('./pages/FyApiDocs'));`
   - 第 ~365 行：`<Route path='/docs' element={<Suspense>...</Suspense>} />`
+- **运行时品牌**：`web/classic/src/pages/FyApiDocs/index.jsx` 读取 `StatusContext.status.system_name`，加载标题和 Markdown 渲染内容会把文档模板中的 `TraceNex` 替换为当前环境品牌，避免 HK 等白标环境直接露出 TraceNex
 - **冲突风险**：低（App.jsx 两处小改，Suspense pattern 和 upstream 一致）
 - **注意**：物理目录必须是 `product-docs/` 而不是 `docs/`，否则与 SPA 路由 `/docs` 冲突（static 中间件 301 到尾斜杠，前端路由再 301 去掉斜杠 → 死循环）。markdown 内图片路径全部用绝对路径 `/product-docs/images/...`。
 

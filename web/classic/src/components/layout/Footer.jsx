@@ -205,7 +205,8 @@ const FooterBar = () => {
               rel='noopener noreferrer'
               className='!text-semi-color-primary font-medium'
             >
-              TraceNex
+              {/* Fy-api overlay: use the runtime brand instead of hard-coded TraceNex. */}
+              {systemName}
             </a>
           </div>
         </div>

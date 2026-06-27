@@ -16,17 +16,25 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import React, { useState, useEffect } from 'react';
-import NewMarkdownRenderer from '../../components/common/NewMarkdownRender/NewMarkdownRender.jsx'
+import React, { useContext, useEffect, useMemo, useState } from 'react';
+import NewMarkdownRenderer from '../../components/common/NewMarkdownRender/NewMarkdownRender.jsx';
+import { getSystemName } from '../../helpers';
+import { StatusContext } from '../../context/Status';
 
 // MD手册的服务器路径（域名+MD文件路径）
 // Fy-api overlay: 物理目录命名为 product-docs 避开 SPA 路由 /docs
 const MD_MANUAL_URL = '/product-docs/TraceNex.md';
 
 export default function FyApiDocs() {
+  const [statusState] = useContext(StatusContext);
+  const systemName = statusState?.status?.system_name || getSystemName();
   const [mdContent, setMdContent] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const renderedMdContent = useMemo(
+    () => mdContent.split('TraceNex').join(systemName),
+    [mdContent, systemName],
+  );
 
   // 组件挂载后，加载MD文件内容
   useEffect(() => {
@@ -36,8 +44,8 @@ export default function FyApiDocs() {
         const response = await fetch(MD_MANUAL_URL, {
           method: 'GET',
           headers: {
-            'Content-Type': 'text/markdown'
-          }
+            'Content-Type': 'text/markdown',
+          },
         });
 
         if (!response.ok) {
@@ -62,7 +70,7 @@ export default function FyApiDocs() {
   if (loading) {
     return (
       <div style={{ padding: '50px', textAlign: 'center' }}>
-        <h3>正在加载 TraceNex 说明手册...</h3>
+        <h3>正在加载 {systemName} 说明手册...</h3>
       </div>
     );
   }
@@ -79,26 +87,32 @@ export default function FyApiDocs() {
 
   // 渲染MD手册（复用你的MarkdownRenderer，保持样式统一）
   return (
-    <div style={{ 
-      maxWidth: '1200px', 
-      margin: '0 auto', 
-      padding: '24px 16px',
-      minHeight: '100vh',
-      backgroundColor: '#fff'
-    }}>
-      <h1 style={{ 
-        textAlign: 'center', 
-        marginTop: '60px',
-        fontSize: '28.8px',
-        fontWeight: '600',
-        fontFamily: 'Microsoft YaHei", sans-serif',
-        color: 'rgb(31, 35, 41)'
-      }}>TraceNex 说明手册</h1>
+    <div
+      style={{
+        maxWidth: '1200px',
+        margin: '0 auto',
+        padding: '24px 16px',
+        minHeight: '100vh',
+        backgroundColor: '#fff',
+      }}
+    >
+      <h1
+        style={{
+          textAlign: 'center',
+          marginTop: '60px',
+          fontSize: '28.8px',
+          fontWeight: '600',
+          fontFamily: 'Microsoft YaHei", sans-serif',
+          color: 'rgb(31, 35, 41)',
+        }}
+      >
+        {systemName} 说明手册
+      </h1>
       <NewMarkdownRenderer
-        content={mdContent}
+        content={renderedMdContent}
         loading={false}
-        fontSize={16}  // 手册字体稍大，提升可读性
-        fontFamily="Microsoft YaHei, sans-serif"
+        fontSize={16} // 手册字体稍大，提升可读性
+        fontFamily='Microsoft YaHei, sans-serif'
         animated={false}
         style={{ lineHeight: '1.8' }}
       />
