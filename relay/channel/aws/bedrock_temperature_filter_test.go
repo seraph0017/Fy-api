@@ -8,8 +8,10 @@ func TestIsTemperatureDeprecatedForBedrock(t *testing.T) {
 		expected bool
 	}{
 		{"claude-opus-4-7", true},
-		{"claude-opus-4-8", true},
+		{"opus-4-7", true},
 		{"us.anthropic.claude-opus-4-7-v1:0", true},
+		{"claude-opus-4-8", true},
+		{"opus-4-8", true},
 		{"us.anthropic.claude-opus-4-8-v1:0", true},
 		{"claude-opus-4-6", false},
 		{"claude-sonnet-4-6", false},
