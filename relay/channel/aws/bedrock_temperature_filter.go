@@ -15,8 +15,8 @@ import "strings"
 // Bedrock no longer accepts the temperature parameter at all.
 // TODO(review): 临时黑名单，随 Bedrock 侧策略变化定期 review，确认是否需要增减条目。
 var bedrockTemperatureDeprecatedModels = []string{
-	"claude-opus-4-7",
-	"claude-opus-4-8",
+	"opus-4-7",
+	"opus-4-8",
 }
 
 func isTemperatureDeprecatedForBedrock(modelName string) bool {

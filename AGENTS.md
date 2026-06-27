@@ -109,6 +109,7 @@ cd ../fy-api-pr-<name>
 ```
 
 After the PR is created, leave the main worktree on its original branch. Do not merge the PR unless the user explicitly asks.
+After a PR has been merged, remove the temporary PR worktree and delete its local branch so stale worktrees do not accumulate.
 
 ### Migration context
 
