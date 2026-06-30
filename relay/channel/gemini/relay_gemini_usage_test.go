@@ -2,6 +2,7 @@ package gemini
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,101 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+func TestGeminiAdaptorSupportsGeminiImagePreviewModel(t *testing.T) {
+	t.Parallel()
+
+	adaptor := &Adaptor{}
+	require.True(t, isGeminiImagePreviewModel("gemini-3-pro-image-preview"))
+	require.True(t, isGeminiImagePreviewModel("gemini-3-pro-image"))
+	require.True(t, isGeminiImagePreviewModel("gemini-3.1-flash-image-preview"))
+
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	got, err := adaptor.convertGeminiImagePreviewRequest(c, &relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelType:       constant.ChannelTypeGemini,
+			UpstreamModelName: "gemini-3-pro-image-preview",
+		},
+		RelayMode: relayconstant.RelayModeImagesGenerations,
+	}, dto.ImageRequest{
+		Model:   "gpt-image-1",
+		Prompt:  "a red panda",
+		N:       common.GetPointer(uint(2)),
+		Size:    "1024x1792",
+		Quality: "high",
+	})
+	require.NoError(t, err)
+
+	req, ok := got.(*dto.GeminiChatRequest)
+	require.True(t, ok)
+	require.Len(t, req.Contents, 1)
+	require.Len(t, req.Contents[0].Parts, 1)
+	require.Equal(t, "a red panda", req.Contents[0].Parts[0].Text)
+	require.Equal(t, []string{"TEXT", "IMAGE"}, req.GenerationConfig.ResponseModalities)
+	require.NotNil(t, req.GenerationConfig.CandidateCount)
+	require.Equal(t, 2, *req.GenerationConfig.CandidateCount)
+	var extra map[string]any
+	require.NoError(t, common.Unmarshal(req.GenerationConfig.ImageConfig, &extra))
+	require.Equal(t, "9:16", extra["aspectRatio"])
+	require.Equal(t, "2K", extra["imageSize"])
+}
+
+func TestGeminiAdaptorConvertsJsonEditImageToInlineData(t *testing.T) {
+	t.Parallel()
+
+	adaptor := &Adaptor{}
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/edits", nil)
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	got, err := adaptor.convertGeminiImagePreviewRequest(c, &relaycommon.RelayInfo{
+		RelayMode: relayconstant.RelayModeImagesEdits,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelType:       constant.ChannelTypeGemini,
+			UpstreamModelName: "gemini-3-pro-image-preview",
+		},
+	}, dto.ImageRequest{
+		Model:  "gpt-image-1",
+		Prompt: "edit this image",
+		Image:  json.RawMessage(`"data:image/png;base64,aGVsbG8="`),
+	})
+	require.NoError(t, err)
+
+	req, ok := got.(*dto.GeminiChatRequest)
+	require.True(t, ok)
+	require.Len(t, req.Contents, 1)
+	require.Len(t, req.Contents[0].Parts, 2)
+	require.Equal(t, "edit this image", req.Contents[0].Parts[0].Text)
+	require.NotNil(t, req.Contents[0].Parts[1].InlineData)
+	require.Equal(t, "image/png", req.Contents[0].Parts[1].InlineData.MimeType)
+}
+
+func TestGeminiAdaptorDoResponseRoutesImagePreviewToChatImageHandler(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1beta/models/gemini-3-pro-image-preview:generateContent", nil)
+
+	info := &relaycommon.RelayInfo{
+		RelayFormat:    types.RelayFormatOpenAIImage,
+		RelayMode:      relayconstant.RelayModeImagesGenerations,
+		RequestURLPath: "/v1/images/generations",
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelType:       constant.ChannelTypeGemini,
+			UpstreamModelName: "gemini-3-pro-image-preview",
+		},
+	}
+	usage, err := (&Adaptor{}).DoResponse(c, &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(bytes.NewReader([]byte(`{"candidates":[{"content":{"parts":[{"inlineData":{"mimeType":"image/png","data":"aGVsbG8="}}]}}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1,"totalTokenCount":2}}`))),
+	}, info)
+	require.Nil(t, err)
+	require.NotNil(t, usage)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Contains(t, w.Body.String(), `"b64_json":"aGVsbG8="`)
+}
 
 func TestGeminiChatHandlerCompletionTokensExcludeToolUsePromptTokens(t *testing.T) {
 	t.Parallel()

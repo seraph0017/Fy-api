@@ -117,14 +117,23 @@
 - **冲突风险**：极低（完整独立子目录，不触碰 upstream 业务代码或构建链）
 - **Merge 策略**：整个子树随上游同步走；唯一需要人工 review 的是 Go 那边的 `go.mod` 模块路径（`github.com/seraph0017/Fy-api/scripts/channel-benchmark`），不要跟主仓的 Go 模块搞混
 
-### B-8 [gemini] 原生 pass-through 入口保留客户端 API 版本
-- **修改文件**：`relay/channel/gemini/adaptor.go`（`GetRequestURL`，紧接 `GetGeminiVersionSetting` 调用之后追加分支）
-- **修改文件**：`setting/model_setting/gemini.go`（默认 `VersionSettings` map 显式钉住 image-preview 模型到 `v1beta`）
-- **新增测试**：`relay/channel/gemini/relay_gemini_usage_test.go::TestGeminiAdaptorGetRequestURLPreservesNativeVersion`（4 个 sub-test，覆盖 native v1beta、native v1、imagen native v1beta、OpenAI 兼容入口回落 model_setting 四条路径）
-- **背景**：海外 SG 部署反馈 `gemini-3-pro-image-preview` 的 native Gemini 调用报 `is not found for API version v1`。Upstream 原始实现里 `GetRequestURL` 一律读 `model_setting.GetGeminiVersionSetting()`，无视客户端写的 `/v1beta/...` 还是 `/v1/...` 路径；后台 `VersionSettings.default` 为 `v1beta` 但任何管理员改动或显式映射都会把 image-preview 这种只在 `v1beta` 暴露的模型踩坑
-- **修复**：在 `RelayMode == constant.RelayModeGemini` 的 native pass-through 路径下，按 `info.RequestURLPath` 前缀（`/v1beta/` 或 `/v1/`）覆盖 `version`；OpenAI / Claude 兼容入口（`RelayModeChatCompletions` 等）继续使用 `model_setting`，行为不变。配合 `gemini.go` 显式钉住的 image-preview 模型，原生入口 + 兼容入口双层兜底
-- **冲突风险**：低（adaptor.go 内只新增一段 `if` 分支，带 `// Fy-api overlay:` 注释；gemini.go 默认 map 只新增 key）
-- **Merge 策略**：上游若改动 `GetRequestURL` 的版本拼接逻辑，保留这段 native pass-through 覆盖；若上游改 `defaultGeminiSettings.VersionSettings`，按需合并新增的 image-preview 项
+### B-8 [gemini] image-preview 兼容与原生版本保护
+- **修改文件**：
+  - `relay/channel/gemini/adaptor.go`（`GetRequestURL` 原生版本保护；`ConvertImageRequest` / `DoResponse` 对 Gemini image-preview 模型走 `generateContent`）
+  - `relay/channel/gemini/chat_image_handler.go`（新增，提取 Gemini `inlineData` 图片并转成 OpenAI `ImageResponse`）
+  - `setting/model_setting/gemini.go`（默认 `VersionSettings` map 显式钉住 image-preview 模型到 `v1beta`；`SupportedImagineModels` 增加 `gemini-3-pro-image`）
+- **新增测试**：
+  - `relay/channel/gemini/relay_gemini_usage_test.go::TestGeminiAdaptorGetRequestURLPreservesNativeVersion`（4 个 sub-test，覆盖 native v1beta、native v1、imagen native v1beta、OpenAI 兼容入口回落 model_setting 四条路径）
+  - `relay/channel/gemini/relay_gemini_usage_test.go::TestGeminiAdaptorSupportsGeminiImagePreviewModel`
+  - `relay/channel/gemini/relay_gemini_usage_test.go::TestGeminiAdaptorConvertsJsonEditImageToInlineData`
+  - `relay/channel/gemini/relay_gemini_usage_test.go::TestGeminiAdaptorDoResponseRoutesImagePreviewToChatImageHandler`
+- **背景**：海外 SG 部署反馈 `gemini-3-pro-image-preview` 的 native Gemini 调用报 `is not found for API version v1`。Upstream 原始实现里 `GetRequestURL` 一律读 `model_setting.GetGeminiVersionSetting()`，无视客户端写的 `/v1beta/...` 还是 `/v1/...` 路径；后台 `VersionSettings.default` 为 `v1beta` 但任何管理员改动或显式映射都会把 image-preview 这种只在 `v1beta` 暴露的模型踩坑。另一方面，upstream 曾合入 OpenAI 图片接口到 Gemini image-preview 的转换后又回滚，当前没有可直接跟进的稳定实现；TraceNex 先以 overlay 支持 `/v1/images/generations` 和 `/v1/images/edits`。
+- **修复**：
+  1. 在 `RelayMode == constant.RelayModeGemini` 的 native pass-through 路径下，按 `info.RequestURLPath` 前缀（`/v1beta/` 或 `/v1/`）覆盖 `version`；OpenAI / Claude 兼容入口（`RelayModeChatCompletions` 等）继续使用 `model_setting`，行为不变。配合 `gemini.go` 显式钉住的 image-preview 模型，原生入口 + 兼容入口双层兜底。
+  2. 对 `gemini-3-pro-image*` / `gemini-3.1-flash-image*` / `gemini-2.5-flash-image*` 的 OpenAI 图片入口，把 `/v1/images/generations` 与 `/v1/images/edits` 转成 Gemini `generateContent`；`edits` 支持 multipart `image` / `image[]` / `mask` 文件和 JSON `image` / `mask` base64 输入；尺寸和质量映射到 Gemini `image_config`。
+  3. 响应侧从 Gemini chat response 的 `inlineData` 图片 part 生成 OpenAI 兼容 `b64_json` 响应；Imagen 模型仍走原有 `:predict` 与 `GeminiImageHandler`，原生 Gemini pass-through 不受影响。
+- **冲突风险**：中（`adaptor.go` 是上游高频文件；新增 `chat_image_handler.go` 降低响应转换冲突面；`gemini.go` 默认配置只新增 key）
+- **Merge 策略**：上游若改动 `GetRequestURL` 的版本拼接逻辑，保留 native pass-through 覆盖；若上游重新实现 image-preview 的 OpenAI 图片协议转换，优先比较其 `/v1/images/generations` / `/v1/images/edits` 行为、计费 usage 和 Imagen 兼容性，再决定是否替换本 overlay。
 
 ### B-9 [claude] 默认过滤 `context_management` beta 字段
 - **修改文件**：
