@@ -41,6 +41,7 @@
   - `model/log_export.go`（GetAllLogsForExport / GetUserLogsForExport / attachChannelNames）
 - **修改文件**：`router/api-router.go`（注册 /api/log/export + /api/log/self/export，仅 2 行）
 - **导出字段**：CSV 镜像使用日志表格，包含 request_id，并从 `logs.other` 解析 `cache_tokens` / `cache_write_tokens` / `cache_creation_tokens*` 导出“缓存读”“缓存写”token 列
+- **ClickHouse 兼容**：导出查询复用 `model/log.go` 的显式文本过滤 helper；ClickHouse 日志库下不使用 `LIKE ... ESCAPE '!'`，排序跟随 `created_at/request_id`，避免 CSV export 和页面查询语义分叉
 - **冲突风险**：低（独立文件 + 2 行 router 注册）
 - **Merge 策略**：router 两行加在 `logRoute.GET("/self/search", ...)` 之后，若 upstream 也改了 logRoute，手动对齐位置
 
@@ -249,7 +250,8 @@
 - **行为**：
   1. 正常转发前仅移除 OpenAI Responses 不接受的客户端内部字段；
   2. 若上游明确返回 `400 + encrypted content could not be verified`，则仅重试一次，并在重试时移除失效 `encrypted_content` 块，让请求退化为明文上下文继续执行；
-  3. 非该特定错误不触发自动重试。
+  3. 原生 `/v1/responses` 与 chat→responses 兼容路径都保留已转换的 outbound JSON 作为重试输入，避免 body reader 消耗后无法降级；
+  4. 非该特定错误不触发自动重试。
 - **取舍**：这是 availability-first 兜底，不会尝试“解密”或伪造客户端密文状态；代价是重试后可能丢失隐藏推理上下文，但优先避免整次请求直接 400。
 - **冲突风险**：中（`responses` 路径仍属上游活跃区域）
 - **Merge 策略**：若 upstream 后续合入原生 `encrypted_content` 亲和 / 重试支持，优先采用 upstream；保留本地“只对特定 400 单次降级”的行为语义直到 upstream 证明等价。

@@ -1,14 +1,19 @@
 package model
 
 import (
+	"context"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 
+	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 func TestIsClickHouseDSN(t *testing.T) {
@@ -127,6 +132,49 @@ func TestBuildLogLikeConditionUsesClickHouseEscaping(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "logs.model_name LIKE ?", condition)
 	assert.Equal(t, `gpt\_4\\mini%`, pattern)
+}
+
+func TestUserLogsExportUsesClickHouseCompatibleModelFilter(t *testing.T) {
+	originalLogDatabaseType := common.LogDatabaseType()
+	originalLogDB := LOG_DB
+	t.Cleanup(func() {
+		common.SetLogDatabaseType(originalLogDatabaseType)
+		LOG_DB = originalLogDB
+	})
+	common.SetLogDatabaseType(common.DatabaseTypeClickHouse)
+
+	capturedLogger := &captureSQLLogger{Interface: logger.Default.LogMode(logger.Info)}
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
+		DryRun: true,
+		Logger: capturedLogger,
+	})
+	require.NoError(t, err)
+	LOG_DB = db
+
+	_, err = GetUserLogsForExport(7, LogTypeConsume, 0, 0, `gpt_4\mini%`, "", "", "")
+
+	require.NoError(t, err)
+	require.NotEmpty(t, capturedLogger.statements)
+	sql := strings.Join(capturedLogger.statements, "\n")
+	assert.Contains(t, sql, "logs.model_name LIKE")
+	assert.NotContains(t, sql, "ESCAPE '!'")
+	assert.Contains(t, sql, "ORDER BY logs.created_at desc, logs.request_id desc")
+}
+
+type captureSQLLogger struct {
+	logger.Interface
+	statements []string
+}
+
+func (l *captureSQLLogger) LogMode(level logger.LogLevel) logger.Interface {
+	l.Interface = l.Interface.LogMode(level)
+	return l
+}
+
+func (l *captureSQLLogger) Trace(ctx context.Context, begin time.Time, fc func() (string, int64), err error) {
+	sql, _ := fc()
+	l.statements = append(l.statements, sql)
+	l.Interface.Trace(ctx, begin, fc, err)
 }
 
 func TestEnsureLogRequestId(t *testing.T) {

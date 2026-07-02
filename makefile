@@ -16,12 +16,12 @@ all: build-all-frontends start-backend
 
 build-frontend:
 	@echo "Building default frontend..."
-	@cd ./web && bun install --frozen-lockfile
+	@cd ./web && bun install --filter ./default --frozen-lockfile
 	@cd $(FRONTEND_DIR) && DISABLE_ESLINT_PLUGIN='true' VITE_REACT_APP_VERSION=$(cat ../../VERSION) bun run build
 
 build-frontend-classic:
 	@echo "Building classic frontend..."
-	@cd ./web && bun install --frozen-lockfile
+	@cd ./web && bun install --filter ./classic --frozen-lockfile
 	@cd $(FRONTEND_CLASSIC_DIR) && VITE_REACT_APP_VERSION=$(cat ../../VERSION) bun run build
 
 build-all-frontends: build-frontend build-frontend-classic
@@ -66,7 +66,7 @@ dev-web:
 
 dev-web-classic:
 	@echo "Starting classic frontend dev server..."
-	@cd ./web && bun install
+	@cd ./web && bun install --filter ./classic
 	@cd $(FRONTEND_CLASSIC_DIR) && bun run dev -- --host 0.0.0.0 --port $(DEV_FRONTEND_CLASSIC_PORT)
 
 dev: dev-api dev-web
