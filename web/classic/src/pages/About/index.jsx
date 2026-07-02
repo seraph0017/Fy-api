@@ -17,8 +17,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useEffect, useState } from 'react';
-import { API, showError } from '../../helpers';
+import React, { useContext, useEffect, useState } from 'react';
+import { API, getSystemName, showError } from '../../helpers';
 import { marked } from 'marked';
 import { Empty } from '@douyinfe/semi-ui';
 import {
@@ -26,12 +26,15 @@ import {
   IllustrationConstructionDark,
 } from '@douyinfe/semi-illustrations';
 import { useTranslation } from 'react-i18next';
+import { StatusContext } from '../../context/Status';
 
 const About = () => {
   const { t } = useTranslation();
+  const [statusState] = useContext(StatusContext);
   const [about, setAbout] = useState('');
   const [aboutLoaded, setAboutLoaded] = useState(false);
   const currentYear = new Date().getFullYear();
+  const systemName = statusState?.status?.system_name || getSystemName();
 
   const displayAbout = async () => {
     setAbout(localStorage.getItem('about') || '');
@@ -63,7 +66,8 @@ const About = () => {
     <div style={{ textAlign: 'center' }}>
       <p>{t('可在设置页面设置关于内容，支持 HTML & Markdown')}</p>
       <p>
-        TraceNex{' '}
+        {/* Fy-api overlay: use the runtime brand instead of hard-coded TraceNex. */}
+        {systemName}{' '}
         {t('© {{currentYear}}', { currentYear })}{' '}
         <a
           href='https://github.com/seraph0017/Fy-api'
