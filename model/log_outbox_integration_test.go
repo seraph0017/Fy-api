@@ -25,7 +25,11 @@ func setupTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	common.UsingSQLite = true
+	prevMainDBType := common.MainDatabaseType()
+	common.SetMainDatabaseType(common.DatabaseTypeSQLite)
+	t.Cleanup(func() {
+		common.SetMainDatabaseType(prevMainDBType)
+	})
 	commonGroupCol = "`group`"
 	commonKeyCol = "`key`"
 	if err := db.AutoMigrate(&Log{}, &ConsumeLogOutbox{}); err != nil {

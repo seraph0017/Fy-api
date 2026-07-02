@@ -85,7 +85,8 @@ func setupUserEndpointTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	common.UsingSQLite = true
+	prevMainDBType := common.MainDatabaseType()
+	common.SetMainDatabaseType(common.DatabaseTypeSQLite)
 	if err := db.AutoMigrate(&model.User{}); err != nil {
 		t.Fatalf("migrate user: %v", err)
 	}
@@ -95,6 +96,7 @@ func setupUserEndpointTestDB(t *testing.T) *gorm.DB {
 	common.RedisEnabled = false
 	t.Cleanup(func() {
 		model.DB = prevDB
+		common.SetMainDatabaseType(prevMainDBType)
 		common.RedisEnabled = prevRedisEnabled
 	})
 	return db
