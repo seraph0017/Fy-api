@@ -52,7 +52,9 @@ RUN go build -ldflags "-s -w -X 'github.com/QuantumNous/new-api/common.Version=$
 
 FROM debian:bookworm-slim
 
-RUN apt-get update \
+RUN apt-get update -o Acquire::AllowInsecureRepositories=true \
+    && apt-get install -y --no-install-recommends --allow-unauthenticated debian-archive-keyring \
+    && apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates tzdata libasan8 wget \
     && rm -rf /var/lib/apt/lists/* \
     && update-ca-certificates
