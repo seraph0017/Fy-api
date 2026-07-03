@@ -117,27 +117,14 @@
 - **冲突风险**：极低（完整独立子目录，不触碰 upstream 业务代码或构建链）
 - **Merge 策略**：整个子树随上游同步走；唯一需要人工 review 的是 Go 那边的 `go.mod` 模块路径（`github.com/seraph0017/Fy-api/scripts/channel-benchmark`），不要跟主仓的 Go 模块搞混
 
-### B-8 [gemini] image-preview 兼容与原生版本保护
-- **修改文件**：
-  - `relay/channel/gemini/adaptor.go`（`GetRequestURL` 原生版本保护；`ConvertImageRequest` / `DoResponse` 对 Gemini image-preview 模型走 `generateContent`）
-  - `relay/channel/gemini/chat_image_handler.go`（新增，提取 Gemini `inlineData` 图片并转成 OpenAI `ImageResponse`）
-  - `setting/model_setting/gemini.go`（默认 `VersionSettings` map 显式钉住 image-preview 模型到 `v1beta`；`SupportedImagineModels` 增加 `gemini-3-pro-image`）
-- **新增测试**：
-  - `relay/channel/gemini/relay_gemini_usage_test.go::TestGeminiAdaptorGetRequestURLPreservesNativeVersion`（4 个 sub-test，覆盖 native v1beta、native v1、imagen native v1beta、OpenAI 兼容入口回落 model_setting 四条路径）
-  - `relay/channel/gemini/relay_gemini_usage_test.go::TestGeminiAdaptorSupportsGeminiImagePreviewModel`
-  - `relay/channel/gemini/relay_gemini_usage_test.go::TestGeminiAdaptorConvertsJsonEditImageToInlineData`
-  - `relay/channel/gemini/relay_gemini_usage_test.go::TestGeminiAdaptorConvertsMultipartEditImageToInlineData`
-  - `relay/channel/gemini/relay_gemini_usage_test.go::TestGeminiAdaptorSetsJSONContentTypeForMultipartImagePreviewEdit`
-  - `relay/channel/gemini/relay_gemini_usage_test.go::TestGeminiAdaptorConvertsMultipartEditImagesAndMaskToInlineData`
-  - `relay/channel/gemini/relay_gemini_usage_test.go::TestGeminiAdaptorConvertsJsonEditImagesArrayToInlineData`
-  - `relay/channel/gemini/relay_gemini_usage_test.go::TestGeminiAdaptorDoResponseRoutesImagePreviewToChatImageHandler`
-- **背景**：海外 SG 部署反馈 `gemini-3-pro-image-preview` 的 native Gemini 调用报 `is not found for API version v1`。Upstream 原始实现里 `GetRequestURL` 一律读 `model_setting.GetGeminiVersionSetting()`，无视客户端写的 `/v1beta/...` 还是 `/v1/...` 路径；后台 `VersionSettings.default` 为 `v1beta` 但任何管理员改动或显式映射都会把 image-preview 这种只在 `v1beta` 暴露的模型踩坑。另一方面，upstream 曾合入 OpenAI 图片接口到 Gemini image-preview 的转换后又回滚，当前没有可直接跟进的稳定实现；TraceNex 先以 overlay 支持 `/v1/images/generations` 和 `/v1/images/edits`。
-- **修复**：
-  1. 在 `RelayMode == constant.RelayModeGemini` 的 native pass-through 路径下，按 `info.RequestURLPath` 前缀（`/v1beta/` 或 `/v1/`）覆盖 `version`；OpenAI / Claude 兼容入口（`RelayModeChatCompletions` 等）继续使用 `model_setting`，行为不变。配合 `gemini.go` 显式钉住的 image-preview 模型，原生入口 + 兼容入口双层兜底。
-  2. 对 `gemini-3-pro-image*` / `gemini-3.1-flash-image*` / `gemini-2.5-flash-image*` 的 OpenAI 图片入口，把 `/v1/images/generations` 与 `/v1/images/edits` 转成 Gemini `generateContent`；转换时直接构造 Gemini `contents[].parts` 和 `responseModalities=["TEXT","IMAGE"]`，避免先伪造成 OpenAI chat content 再二次转换导致 `contents` 丢失。`edits` 支持 multipart `image` / 重复 `image` / `image[]` / `mask` 文件和 JSON `image` / `images[]` / `mask` base64 输入；multipart 转成 Gemini JSON body 后会把上游 `Content-Type` 强制改为 `application/json`；尺寸和质量映射到 Gemini `image_config`。
-  3. 响应侧从 Gemini chat response 的 `inlineData` 图片 part 生成 OpenAI 兼容 `b64_json` 响应；Imagen 模型仍走原有 `:predict` 与 `GeminiImageHandler`，原生 Gemini pass-through 不受影响。
-- **冲突风险**：中（`adaptor.go` 是上游高频文件；新增 `chat_image_handler.go` 降低响应转换冲突面；`gemini.go` 默认配置只新增 key）
-- **Merge 策略**：上游若改动 `GetRequestURL` 的版本拼接逻辑，保留 native pass-through 覆盖；若上游重新实现 image-preview 的 OpenAI 图片协议转换，优先比较其 `/v1/images/generations` / `/v1/images/edits` 行为、计费 usage 和 Imagen 兼容性，再决定是否替换本 overlay。
+### B-8 [gemini] 原生 pass-through 入口保留客户端 API 版本
+- **修改文件**：`relay/channel/gemini/adaptor.go`（`GetRequestURL`，紧接 `GetGeminiVersionSetting` 调用之后追加分支）
+- **修改文件**：`setting/model_setting/gemini.go`（默认 `VersionSettings` map 显式钉住 image-preview 模型到 `v1beta`）
+- **新增测试**：`relay/channel/gemini/relay_gemini_usage_test.go::TestGeminiAdaptorGetRequestURLPreservesNativeVersion`（4 个 sub-test，覆盖 native v1beta、native v1、imagen native v1beta、OpenAI 兼容入口回落 model_setting 四条路径）
+- **背景**：海外 SG 部署反馈 `gemini-3-pro-image-preview` 的 native Gemini 调用报 `is not found for API version v1`。Upstream 原始实现里 `GetRequestURL` 一律读 `model_setting.GetGeminiVersionSetting()`，无视客户端写的 `/v1beta/...` 还是 `/v1/...` 路径；后台 `VersionSettings.default` 为 `v1beta` 但任何管理员改动或显式映射都会把 image-preview 这种只在 `v1beta` 暴露的模型踩坑
+- **修复**：在 `RelayMode == constant.RelayModeGemini` 的 native pass-through 路径下，按 `info.RequestURLPath` 前缀（`/v1beta/` 或 `/v1/`）覆盖 `version`；OpenAI / Claude 兼容入口（`RelayModeChatCompletions` 等）继续使用 `model_setting`，行为不变。配合 `gemini.go` 显式钉住的 image-preview 模型，原生入口 + 兼容入口双层兜底
+- **冲突风险**：低（adaptor.go 内只新增一段 `if` 分支，带 `// Fy-api overlay:` 注释；gemini.go 默认 map 只新增 key）
+- **Merge 策略**：上游若改动 `GetRequestURL` 的版本拼接逻辑，保留这段 native pass-through 覆盖；若上游改 `defaultGeminiSettings.VersionSettings`，按需合并新增的 image-preview 项
 
 ### B-9 [claude] 默认过滤 `context_management` beta 字段
 - **修改文件**：
@@ -214,6 +201,7 @@
   - 命令：`fy-image-loadtest`
   - 用途：针对 `/v1/images/generations` 的持续压测，支持多渠道 pin、每渠道独立并发、`duration_sec` / `max_requests_per_channel` 结束条件、429 `retry-after` 冷却
 - **新增文件**：`scripts/channel-benchmark/py/image-loadtest.yaml`
+- **新增文件**：`docs/操作手册-gpt-image-2图片模型接入.md`（运营/客户侧 gpt-image-2 渠道配置、请求参数、示例和排障说明）
 - **本地配置约定**：`scripts/channel-benchmark/py/image-loadtest.local.yaml`（gitignore，不入库；需要时从 `image-loadtest.yaml` 复制生成）
 - **修改文件**：
   - `scripts/channel-benchmark/py/pyproject.toml`（注册 `fy-image-loadtest` CLI）
@@ -544,16 +532,13 @@
 
 ### F-1 [brand] 浏览器 tab + icon
 - **文件**：`web/classic/index.html`
-- **修改**：静态首屏 fallback 使用中性 `<title>AI Gateway</title>` + `<link rel="icon" href="/logo.png?v=2" />`，真实品牌由运行时 `/api/status` 覆盖
-- **运行时同步**：`web/classic/src/components/layout/PageLayout.jsx` 在读取 `/api/status` 后，用返回的 `system_name` / `logo` 更新 `document.title` 和 favicon；首次渲染先应用 localStorage 缓存的品牌，支持 HK 等环境只通过后台 `SystemName` / `Logo` 配置换名换图标
-- **附带改动**：`web/classic/src/components/layout/Footer.jsx`、`web/classic/src/pages/About/index.jsx` 的默认品牌展示改为读取 runtime `systemName`，不再写死 TraceNex
+- **修改**：`<title>TraceNex</title>` + `<link rel="icon" href="/new_logo.png?v=2" />`
 - **冲突风险**：中（上游会改 meta description）
-- **Merge 策略**：静态 title/icon 保持中性兜底；运行时同步逻辑必须保留；meta description 可接受 upstream
+- **Merge 策略**：title 和 icon 两处坚持用 TraceNex；meta description 可接受 upstream
 
 ### F-2 [brand] Logo 和 favicon
 - **新增**：`web/classic/public/new_logo.png` (3.4 MB)
-- **新增**：`web/classic/public/mobile-site-logo.svg`，供 HK/移动站点环境在后台 `Logo=/mobile-site-logo.svg` 时使用
-- **新增/替换**：`web/classic/public/favicon.ico`，避免浏览器直接请求 `/favicon.ico` 时落到 SPA HTML
+- **替换**：`web/classic/public/favicon.ico`
 - **冲突风险**：低（上游偶尔更新 logo.png，我们用 new_logo.png 独立）
 - **注意**：v1.0 merge 时 git 的 directory-rename 启发式会把 public 资源建议到 `web/default/public/`，**必须手动改到 `web/classic/public/`**
 
@@ -576,16 +561,16 @@
 - **新增文件**：
   - `web/classic/src/pages/FyApiDocs/index.jsx`（重命名自 TraceNexDocs；当前 `/docs` 入口跳转到统一静态产品文档页）
   - `web/classic/src/components/common/NewMarkdownRender/NewMarkdownRender.jsx`
-  - `web/classic/public/product-docs/api-reference.html`（合并页：顶部 3 个路由式链接 `API 接口文档` / `模型接入指南` / `平台功能指南`）
+  - `web/classic/public/product-docs/api-reference.html`（合并页：顶部 3 个路由式标签 `API 接口文档` / `模型接入指南` / `平台功能指南`）
   - `web/classic/public/product-docs/index.html`（兼容入口，跳转到合并页）
   - `web/classic/public/product-docs/model-integration-guide.html`（旧链接兼容，跳转到合并页模型接入标签）
-  - `web/classic/public/product-docs/TraceNex.md`（旧 Markdown 链接兼容说明，避免继续暴露过期内部内容）
+  - `web/classic/public/product-docs/TraceNex.md`（旧 Markdown 素材保留，不再作为产品文档入口）
   - `web/classic/public/product-docs/images/image1.png` ~ `image18.png`
 - **修改文件**：`web/classic/src/App.jsx`
   - 第 ~59 行：`const FyApiDocs = lazy(() => import('./pages/FyApiDocs'));`
   - 第 ~365 行：`<Route path='/docs' element={<Suspense>...</Suspense>} />`
-- **运行时品牌**：统一静态产品文档页会读取 `/api/status` 的 `system_name` 更新页面标题和顶部品牌；正文使用通用“API 网关”表述，避免 HK 等白标环境直接露出 TraceNex
-- **冲突风险**：低（App.jsx 两处小改，Suspense pattern 和 upstream 一致）
+- **修改文件**：`web/classic/src/components/layout/PageLayout.jsx`（`/docs` 路径使用 early return 跳过 Header/Footer 包装，作为独立页面渲染）
+- **冲突风险**：低（App.jsx 两处小改，Suspense pattern 和 upstream 一致；PageLayout.jsx 只新增 `isDocsRoute` 检查 + early return）
 - **注意**：物理目录必须是 `product-docs/` 而不是 `docs/`，否则与 SPA 路由 `/docs` 冲突（static 中间件 301 到尾斜杠，前端路由再 301 去掉斜杠 → 死循环）。产品文档内图片路径全部用绝对路径 `/product-docs/images/...`。
 
 ### F-5 [csv-export] 日志页 "导出 CSV" 按钮

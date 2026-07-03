@@ -62,6 +62,8 @@ const PageLayout = () => {
     '/pricing',
   ];
 
+  const isDocsRoute = location.pathname === '/docs';
+
   const shouldHideFooter = cardProPages.includes(location.pathname);
 
   const shouldInnerPadding =
@@ -151,6 +153,15 @@ const PageLayout = () => {
       }
     }
   }, [i18n, userState?.user?.setting]);
+
+  // Fy-api overlay: /docs renders as a standalone page without header/footer.
+  if (isDocsRoute) {
+    return (
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
+    );
+  }
 
   return (
     <Layout

@@ -23,26 +23,17 @@ const PRODUCT_DOCS_URL = '/product-docs/api-reference.html#platform';
 
 export default function FyApiDocs() {
   return (
-    <div style={{
-      minHeight: '60vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '48px 16px',
-      color: 'rgb(31, 35, 41)',
-    }}>
-      <iframe
-        src={PRODUCT_DOCS_URL}
-        title="产品文档"
-        style={{
-          width: '100%',
-          height: 'calc(100vh - 64px)',
-          border: 'none',
-          position: 'absolute',
-          top: 64,
-          left: 0,
-        }}
-      />
-    </div>
+    <iframe
+      src={PRODUCT_DOCS_URL}
+      title="产品文档"
+      style={{
+        width: '100%',
+        height: '100vh',
+        border: 'none',
+        position: 'absolute',
+        top: 0,
+        left: 0,
+      }}
+    />
   );
 }
