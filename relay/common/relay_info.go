@@ -192,6 +192,11 @@ type RelayInfo struct {
 	*ResponsesUsageInfo
 	*ChannelMeta
 	*TaskRelayInfo
+
+	// Fy-api overlay: image-edit-timeout-3x
+	// When set, doRequest multiplies the global RELAY_TIMEOUT by this factor
+	// for this request. Used for slow endpoints like /v1/images/edits.
+	TimeoutMultiplier int
 }
 
 func (info *RelayInfo) InitChannelMeta(c *gin.Context) {
