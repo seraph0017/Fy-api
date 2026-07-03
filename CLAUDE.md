@@ -106,7 +106,7 @@ Known Fabric targets:
 | `cn-test` | Chengdu test env | `root@8.156.88.148:58422` via default SSH key/agent | Local build + deploy (no ACR); nginx at `/etc/nginx/conf.d/tracenex-test.conf`; domains `*-test.tracenex.cn` |
 | `hk-test` | Hong Kong test env | `root@47.86.175.72:58422` via default SSH key/agent | Fy-api overlay: replaces the old `sg-test` target; local build + deploy (no ACR) |
 
-Fabric `release` does: server git fetch/checkout -> `git archive` to `/tmp/fy-api-build` -> server Podman build -> ACR push -> `scripts/prod/06-deploy-blue-green.sh`. Fy-api overlay: active non-CN production/test targets are now `hk` / `hk-test`; keep SG references below only for migration history.
+Fabric `release` does: server git fetch/checkout -> `git archive` to `/tmp/fy-api-build` -> server Podman build -> ACR push -> `scripts/prod/06-deploy-blue-green.sh`.
 
 ### Migration context
 

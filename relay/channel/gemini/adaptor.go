@@ -1,17 +1,22 @@
 package gemini
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"strings"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/relay/channel"
 	"github.com/QuantumNous/new-api/relay/channel/openai"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
-	"github.com/QuantumNous/new-api/relay/constant"
+	relayconstant "github.com/QuantumNous/new-api/relay/constant"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/setting/reasoning"
 	"github.com/QuantumNous/new-api/types"
@@ -58,6 +63,9 @@ func (a *Adaptor) ConvertAudioRequest(c *gin.Context, info *relaycommon.RelayInf
 }
 
 func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.ImageRequest) (any, error) {
+	if isGeminiImagePreviewModel(info.UpstreamModelName) {
+		return a.convertGeminiImagePreviewRequest(c, info, request)
+	}
 	if !strings.HasPrefix(info.UpstreamModelName, "imagen") {
 		return nil, errors.New("not supported model for image generation, only imagen models are supported")
 	}
@@ -123,6 +131,273 @@ func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInf
 	return geminiRequest, nil
 }
 
+func isGeminiImagePreviewModel(model string) bool {
+	return strings.HasPrefix(model, "gemini-3-pro-image") ||
+		strings.HasPrefix(model, "gemini-3.1-flash-image") ||
+		strings.HasPrefix(model, "gemini-2.5-flash-image")
+}
+
+// Fy-api overlay: route OpenAI image-compatible requests for Gemini
+// image-preview models through generateContent, which returns inlineData image
+// parts instead of Imagen predictions.
+func (a *Adaptor) convertGeminiImagePreviewRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.ImageRequest) (any, error) {
+	parts := []dto.GeminiPart{}
+	if strings.TrimSpace(request.Prompt) != "" {
+		parts = append(parts, dto.GeminiPart{Text: request.Prompt})
+	}
+
+	if info.RelayMode == relayconstant.RelayModeImagesEdits {
+		hasInputImage := false
+		if isMultipartFormRequest(c) {
+			if imageParts, err := readMultipartImageParts(c, "image", "image[]"); err != nil {
+				return nil, err
+			} else if len(imageParts) > 0 {
+				hasInputImage = true
+				parts = append(parts, imageParts...)
+			}
+			if maskParts, err := readMultipartImageParts(c, "mask"); err != nil {
+				return nil, err
+			} else if len(maskParts) > 0 {
+				parts = append(parts, dto.GeminiPart{Text: "Use the next image as the edit mask."})
+				parts = append(parts, maskParts...)
+			}
+		}
+		if imageParts, err := rawImagePartsFromJSON(request.Image); err != nil {
+			return nil, err
+		} else if len(imageParts) > 0 {
+			hasInputImage = true
+			parts = append(parts, imageParts...)
+		}
+		if imageParts, err := rawImagePartsFromJSON(request.Images); err != nil {
+			return nil, err
+		} else if len(imageParts) > 0 {
+			hasInputImage = true
+			parts = append(parts, imageParts...)
+		}
+		if maskParts, err := rawImagePartsFromJSON(request.Mask); err != nil {
+			return nil, err
+		} else if len(maskParts) > 0 {
+			parts = append(parts, dto.GeminiPart{Text: "Use the next image as the edit mask."})
+			parts = append(parts, maskParts...)
+		} else if request.Mask != nil && len(request.Mask) > 0 {
+			parts = append(parts, dto.GeminiPart{Text: "Apply the provided mask."})
+		}
+		if !hasInputImage {
+			return nil, errors.New("image is required")
+		}
+	}
+
+	if len(parts) == 0 {
+		return nil, errors.New("prompt is required")
+	}
+
+	geminiReq := &dto.GeminiChatRequest{
+		Contents: []dto.GeminiChatContent{
+			{
+				Role:  "user",
+				Parts: parts,
+			},
+		},
+		GenerationConfig: dto.GeminiChatGenerationConfig{
+			ResponseModalities: []string{"TEXT", "IMAGE"},
+		},
+	}
+	if request.N != nil && *request.N > 0 {
+		geminiReq.GenerationConfig.CandidateCount = lo.ToPtr(int(*request.N))
+	}
+
+	config := processGeminiImageSizeParameters(strings.TrimSpace(request.Size), request.Quality)
+	if config.AspectRatio != "" || config.ImageSize != "" {
+		imageConfig := make(map[string]any)
+		if config.AspectRatio != "" {
+			imageConfig["aspectRatio"] = config.AspectRatio
+		}
+		if config.ImageSize != "" {
+			imageConfig["imageSize"] = config.ImageSize
+		}
+		geminiReq.GenerationConfig.ImageConfig, _ = common.Marshal(imageConfig)
+	}
+	return geminiReq, nil
+}
+
+func isMultipartFormRequest(c *gin.Context) bool {
+	if c == nil || c.Request == nil {
+		return false
+	}
+	return strings.Contains(c.Request.Header.Get("Content-Type"), "multipart/form-data")
+}
+
+func readMultipartImageParts(c *gin.Context, fieldNames ...string) ([]dto.GeminiPart, error) {
+	form, err := common.ParseMultipartFormReusable(c)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse image edit form request: %w", err)
+	}
+
+	fileHeaders := make([]*multipart.FileHeader, 0)
+	for _, key := range fieldNames {
+		fileHeaders = append(fileHeaders, form.File[key]...)
+	}
+	if len(fileHeaders) == 0 {
+		return nil, nil
+	}
+
+	parts := make([]dto.GeminiPart, 0, len(fileHeaders))
+	for _, fileHeader := range fileHeaders {
+		file, err := fileHeader.Open()
+		if err != nil {
+			return nil, fmt.Errorf("failed to open image file: %w", err)
+		}
+
+		fileBytes, err := io.ReadAll(file)
+		_ = file.Close()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read image file: %w", err)
+		}
+
+		mimeType := fileHeader.Header.Get("Content-Type")
+		if mimeType == "" || mimeType == "application/octet-stream" {
+			mimeType = http.DetectContentType(fileBytes)
+		}
+		if !strings.HasPrefix(mimeType, "image/") {
+			mimeType = "image/png"
+		}
+
+		parts = append(parts, dto.GeminiPart{
+			InlineData: &dto.GeminiInlineData{
+				MimeType: mimeType,
+				Data:     base64.StdEncoding.EncodeToString(fileBytes),
+			},
+		})
+	}
+
+	return parts, nil
+}
+
+func rawImagePartsFromJSON(raw json.RawMessage) ([]dto.GeminiPart, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+
+	var encoded string
+	if err := common.Unmarshal(raw, &encoded); err == nil {
+		return geminiImagePartFromEncodedString(encoded)
+	}
+
+	var encodedList []string
+	if err := common.Unmarshal(raw, &encodedList); err != nil {
+		return nil, fmt.Errorf("invalid image payload: %w", err)
+	}
+	parts := make([]dto.GeminiPart, 0, len(encodedList))
+	for _, encoded := range encodedList {
+		imageParts, err := geminiImagePartFromEncodedString(encoded)
+		if err != nil {
+			return nil, err
+		}
+		parts = append(parts, imageParts...)
+	}
+	return parts, nil
+}
+
+func geminiImagePartFromEncodedString(encoded string) ([]dto.GeminiPart, error) {
+	encoded = strings.TrimSpace(encoded)
+	if encoded == "" {
+		return nil, nil
+	}
+
+	if strings.HasPrefix(encoded, "http://") || strings.HasPrefix(encoded, "https://") {
+		return downloadGeminiImageParts(encoded)
+	}
+
+	mimeType, cleanBase64, err := service.DecodeBase64FileData(encoded)
+	if err != nil {
+		return nil, err
+	}
+	return []dto.GeminiPart{
+		{
+			InlineData: &dto.GeminiInlineData{
+				MimeType: mimeType,
+				Data:     cleanBase64,
+			},
+		},
+	}, nil
+}
+
+func downloadGeminiImageParts(imageURL string) ([]dto.GeminiPart, error) {
+	client := service.GetHttpClient()
+	if client == nil {
+		client = http.DefaultClient
+	}
+	resp, err := client.Get(imageURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to download image from url: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to download image from url: status %d", resp.StatusCode)
+	}
+
+	imageBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read image from url: %w", err)
+	}
+	if len(imageBytes) == 0 {
+		return nil, errors.New("no image data found in the url response")
+	}
+
+	mimeType := http.DetectContentType(imageBytes)
+	if !strings.HasPrefix(mimeType, "image/") {
+		mimeType = "image/png"
+	}
+
+	return []dto.GeminiPart{
+		{
+			InlineData: &dto.GeminiInlineData{
+				MimeType: mimeType,
+				Data:     base64.StdEncoding.EncodeToString(imageBytes),
+			},
+		},
+	}, nil
+}
+
+type geminiImageConfig struct {
+	AspectRatio string
+	ImageSize   string
+}
+
+func processGeminiImageSizeParameters(size, quality string) geminiImageConfig {
+	config := geminiImageConfig{}
+	switch size {
+	case "1536x1024":
+		config.AspectRatio = "3:2"
+	case "1024x1536":
+		config.AspectRatio = "2:3"
+	case "1024x1792":
+		config.AspectRatio = "9:16"
+	case "1792x1024":
+		config.AspectRatio = "16:9"
+	case "2048x2048":
+		config.ImageSize = "2K"
+	case "4096x4096":
+		config.ImageSize = "4K"
+	default:
+		if strings.Contains(size, ":") {
+			config.AspectRatio = size
+		}
+	}
+
+	switch strings.ToLower(strings.TrimSpace(quality)) {
+	case "hd", "high", "2k":
+		config.ImageSize = "2K"
+	case "4k":
+		config.ImageSize = "4K"
+	case "standard", "medium", "low", "auto", "1k":
+		config.ImageSize = "1K"
+	}
+
+	return config
+}
+
 func (a *Adaptor) Init(info *relaycommon.RelayInfo) {
 
 }
@@ -151,7 +426,7 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 	// 导致 gemini-3-pro-image-preview 等只在 v1beta 暴露的模型返回
 	// "is not found for API version v1"。仅在 RelayModeGemini 下生效，
 	// 不影响 OpenAI/Claude 兼容入口对版本的统一管理。
-	if info.RelayMode == constant.RelayModeGemini {
+	if info.RelayMode == relayconstant.RelayModeGemini {
 		if strings.HasPrefix(info.RequestURLPath, "/v1beta/") {
 			version = "v1beta"
 		} else if strings.HasPrefix(info.RequestURLPath, "/v1/") {
@@ -176,7 +451,7 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 	action := "generateContent"
 	if info.IsStream {
 		action = "streamGenerateContent?alt=sse"
-		if info.RelayMode == constant.RelayModeGemini {
+		if info.RelayMode == relayconstant.RelayModeGemini {
 			info.DisablePing = true
 		}
 	}
@@ -185,6 +460,10 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 
 func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *relaycommon.RelayInfo) error {
 	channel.SetupApiRequestHeader(info, c, req)
+	if isGeminiImagePreviewModel(info.UpstreamModelName) &&
+		(info.RelayMode == relayconstant.RelayModeImagesGenerations || info.RelayMode == relayconstant.RelayModeImagesEdits) {
+		req.Set("Content-Type", "application/json")
+	}
 	req.Set("x-goog-api-key", info.ApiKey)
 	return nil
 }
@@ -260,7 +539,7 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, request
 }
 
 func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (usage any, err *types.NewAPIError) {
-	if info.RelayMode == constant.RelayModeGemini {
+	if info.RelayMode == relayconstant.RelayModeGemini {
 		if strings.Contains(info.RequestURLPath, ":embedContent") ||
 			strings.Contains(info.RequestURLPath, ":batchEmbedContents") {
 			return NativeGeminiEmbeddingHandler(c, resp, info)
@@ -274,6 +553,9 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 
 	if strings.HasPrefix(info.UpstreamModelName, "imagen") {
 		return GeminiImageHandler(c, info, resp)
+	}
+	if isGeminiImagePreviewModel(info.UpstreamModelName) {
+		return ChatImageHandler(c, info, resp)
 	}
 
 	// check if the model is an embedding model

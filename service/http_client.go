@@ -63,6 +63,19 @@ func GetHttpClient() *http.Client {
 	return httpClient
 }
 
+// CloneHttpClientWithTimeout returns a shallow copy of the given client with
+// its Timeout multiplied by the given factor. The original client remains
+// unchanged. Returns the original client if common.RelayTimeout is 0 (no
+// timeout configured).
+func CloneHttpClientWithTimeout(client *http.Client, multiplier int) *http.Client {
+	if common.RelayTimeout == 0 || client == nil {
+		return client
+	}
+	cloned := *client
+	cloned.Timeout = time.Duration(common.RelayTimeout*multiplier) * time.Second
+	return &cloned
+}
+
 // GetHttpClientWithProxy returns the default client or a proxy-enabled one when proxyURL is provided.
 func GetHttpClientWithProxy(proxyURL string) (*http.Client, error) {
 	if proxyURL == "" {

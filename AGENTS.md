@@ -113,11 +113,11 @@ After a PR has been merged, remove the temporary PR worktree and delete its loca
 
 ### Migration context
 
-SG production was migrated from a legacy self-hosted MySQL (8.222.175.17) on 2026-05-07.
+HK production was migrated from a legacy self-hosted MySQL (8.222.175.17) on 2026-05-07.
 
 - Source: `8.222.175.17` (decommissioned), databases `tracenex` and `tracenex_log.logs`.
-- Target: SG RDS `transnext_db` used by `api.aitracenex.com`.
-- SG pre-migration backup: `/opt/fy-api/backup/transnext_db-before-legacy-migration-20260507-231343.sql.gz` on the SG server.
+- Target: HK RDS `transnext_db` used by `api.aitracenex.com`.
+- HK pre-migration backup: `/opt/fy-api/backup/transnext_db-before-legacy-migration-20260507-231343.sql.gz` on the HK server.
 - Legacy MySQL operational access is via `/etc/mysql/debian.cnf`; application DSNs are in `/root/TraceNex/.env`. Do not print database passwords.
 
 ## High-Level Architecture

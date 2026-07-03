@@ -4,8 +4,8 @@
 **Detected by**: customer running `aime25` / `gpqa-diamond` against 概泽 channels
 (model: `kimi-k2-thinking`). They saw `aime25 = 55.63%` and `gpqa-diamond = 76%`,
 both well below the vendor's published numbers (96% / 86%).
-**Resolved by**: nginx + `RELAY_TIMEOUT` + `STREAMING_TIMEOUT` raised on CN + SG,
-no code change. Blue-green redeploy at 2026-05-11 15:51 (CN) / 15:52 (SG).
+**Resolved by**: nginx + `RELAY_TIMEOUT` + `STREAMING_TIMEOUT` raised on CN + HK,
+no code change. Blue-green redeploy at 2026-05-11 15:51 (CN) / 15:52 (HK).
 **Root cause class**: timeout-layer mismatch — the inner layer (Fy-api HTTP
 client) was tighter than the outer layer (nginx), so streams that the gateway
 *could* have proxied died early.
@@ -60,7 +60,7 @@ one. The invisible 600s `RELAY_TIMEOUT` was the actual ceiling.
 
 ## Fix (config-only, no code, no rebuild)
 
-Both production nodes (CN `8.136.146.211`, SG `47.236.133.70`):
+Both production nodes (CN `8.136.146.211`, HK `47.83.137.1`):
 
 | Layer | Before | After |
 |---|---|---|

@@ -62,6 +62,8 @@ const PageLayout = () => {
     '/pricing',
   ];
 
+  const isDocsRoute = location.pathname === '/docs';
+
   const shouldHideFooter = cardProPages.includes(location.pathname);
 
   const shouldInnerPadding =
@@ -94,6 +96,9 @@ const PageLayout = () => {
       if (success) {
         statusDispatch({ type: 'set', payload: data });
         setStatusData(data);
+        // Fy-api overlay: keep browser title/favicon in sync with runtime
+        // brand settings returned by /api/status.
+        applyDocumentBrand(data.system_name, data.logo || getLogo());
       } else {
         showError('Unable to connect to server');
       }
@@ -102,20 +107,24 @@ const PageLayout = () => {
     }
   };
 
-  useEffect(() => {
-    loadUser();
-    loadStatus().catch(console.error);
-    let systemName = getSystemName();
+  const applyDocumentBrand = (systemName, logo) => {
     if (systemName) {
       document.title = systemName;
     }
-    let logo = getLogo();
     if (logo) {
       let linkElement = document.querySelector("link[rel~='icon']");
       if (linkElement) {
         linkElement.href = logo;
       }
     }
+  };
+
+  useEffect(() => {
+    loadUser();
+    loadStatus().catch(console.error);
+    // Fy-api overlay: apply cached brand immediately, then refresh after
+    // /api/status resolves.
+    applyDocumentBrand(getSystemName(), getLogo());
   }, []);
 
   useEffect(() => {
@@ -144,6 +153,15 @@ const PageLayout = () => {
       }
     }
   }, [i18n, userState?.user?.setting]);
+
+  // Fy-api overlay: /docs renders as a standalone page without header/footer.
+  if (isDocsRoute) {
+    return (
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
+    );
+  }
 
   return (
     <Layout

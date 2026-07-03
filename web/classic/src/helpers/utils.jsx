@@ -48,7 +48,8 @@ export function isRoot() {
 
 export function getSystemName() {
   let system_name = localStorage.getItem('system_name');
-  if (!system_name) return 'New API';
+  // Fy-api overlay: avoid exposing upstream "New API" before /api/status loads.
+  if (!system_name) return 'AI Gateway';
   return system_name;
 }
 

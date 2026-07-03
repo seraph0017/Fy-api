@@ -1,5 +1,5 @@
 """
-Fabric tasks for operating TraceNex fleet (CN + SG + anywhere else).
+Fabric tasks for operating TraceNex fleet (CN + HK + anywhere else).
 
 Setup:
     pip install fabric
@@ -8,11 +8,11 @@ Usage:
     cd scripts/ops
     fab -l                              # list all tasks
     fab -H cn status                    # status on CN only
-    fab -H sg,cn status                 # on both
+    fab -H hk,cn status                 # on both
     fab deploy --tag=v0.9.7             # deploy v0.9.7 to all hosts (default)
     fab -H cn logs --tail=200           # last 200 lines of Fy-api log on CN
-    fab -H cn,sg ps                     # container status on both
-    fab sync-config                     # trigger CN->SG config sync now
+    fab -H cn,hk ps                     # container status on both
+    fab sync-config                     # trigger CN->HK config sync now
 
 Host aliases are defined in `fabric.yaml` (fabric auto-loads it).
 SSH config comes from ~/.ssh/config — add hosts there rather than hardcoding IPs.
@@ -39,12 +39,12 @@ HOSTS = {
         "log_dir": "/opt/fy-api/logs",
         "nginx_conf": "/etc/nginx/conf.d/fy-api.conf",
     },
-    "sg": {
-        "host": "tracenex-sg",          # ~/.ssh/config alias
+    "hk": {
+        "host": "tracenex-hk",          # ~/.ssh/config alias
         "user": "root",
-        "region": "ap-southeast-1",
-        "registry": "registry.ap-southeast-1.aliyuncs.com",
-        "namespace": "tracenex-sg",     # fill in your SG ACR namespace
+        "region": "ap-east-1",
+        "registry": "transnext-acr-ee-hk-registry-vpc.ap-east-1.cr.aliyuncs.com",
+        "namespace": "transnext",
         "repo": "fy-api",
         "env_file": "/opt/fy-api/config/fy-api.env",
         "log_dir": "/opt/fy-api/logs",
@@ -227,10 +227,10 @@ def rollback(ctx, tag):
 
 @task
 def sync_config(ctx):
-    """Trigger one CN -> SG config sync now (channels / abilities / options)."""
+    """Trigger one CN -> HK config sync now (channels / abilities / options)."""
     cn = HOSTS["cn"]
     c = Connection(host=cn["host"], user=cn["user"])
-    print("\n==== Running config sync (CN -> SG) ====")
+    print("\n==== Running config sync (CN -> HK) ====")
     _run(c, "python3 ~/Fy-api/scripts/ops/sync_config.py", warn=True)
 
 

@@ -1,6 +1,6 @@
 ---
 name: customer-list
-description: Use when the user asks for TraceNex/Fy-api customer lists, client rosters, user quota reports, discount breakdowns, model usage per customer, or channel/supplier mappings per customer. Covers CN and SG production environments.
+description: Use when the user asks for TraceNex/Fy-api customer lists, client rosters, user quota reports, discount breakdowns, model usage per customer, or channel/supplier mappings per customer. Covers CN and HK production environments.
 ---
 
 # Customer List Report
@@ -30,7 +30,7 @@ Also exclude:
 | Target | SSH Command |
 |--------|-------------|
 | CN | `ssh -i ~/.ssh/tracenex_XN.pem -p 58422 root@8.136.146.211` |
-| SG | `ssh -i ~/.ssh/AI_tracenex.pem -p 58422 root@47.236.133.70` |
+| HK | `ssh -i ~/.ssh/tracenex_XN.pem -p 58422 root@47.83.137.1` |
 
 DB credentials are in `/opt/fy-api/config/fy-api.env` as `SQL_DSN` (Go GORM format: `user:pass@tcp(host:port)/db?params`).
 
@@ -106,7 +106,7 @@ CSV columns:
 ```
 
 Rules:
-- Both environments in one file, distinguished by `环境` column (CN/SG)
+- Both environments in one file, distinguished by `环境` column (CN/HK)
 - One row per customer
 - Discounts: semicolons between model series (e.g. `Claude→0.75; GPT→0.7; Kimi→0.5`)
 - Models separated by ` | `

@@ -14,8 +14,8 @@ Setup:
 Common usage from the Fy-api repo root:
     fab info
     fab status --target=cn
-    fab status --target=sg
-    fab bootstrap-system --target=sg
+    fab status --target=hk
+    fab bootstrap-system --target=hk
     fab release --target=cn --tag=v0.9.8 --ref=origin/main
     fab deploy --target=cn --tag=v0.9.8
     fab rollback --target=cn --tag=v0.9.7
@@ -23,9 +23,9 @@ Common usage from the Fy-api repo root:
 
 Known targets:
     cn: ssh -i ~/.ssh/tracenex_XN.pem -p 58422 root@8.136.146.211
-    sg: ssh -i ~/.ssh/AI_tracenex.pem -p 58422 root@47.236.133.70
+    hk: ssh -p 58422 root@47.83.137.1
     cn-test: ssh -p 58422 root@8.156.88.148
-    sg-test: ssh root@8.222.175.17
+    hk-test: ssh -p 58422 root@47.86.175.72
 
 Override with environment variables when needed:
     FYAPI_TARGET
@@ -59,16 +59,16 @@ TARGETS = {
         "repo": "fy-api",
         "repo_url": "git@github.com:seraph0017/Fy-api.git",
     },
-    "sg": {
-        "host": "47.236.133.70",
+    "hk": {
+        "host": "47.83.137.1",
         "port": 58422,
         "user": "root",
-        "key": "~/.ssh/AI_tracenex.pem",
+        "key": "",
         "app_dir": "/opt/fy-api",
         "src_dir": "/root/Fy-api",
         "build_dir": "/tmp/fy-api-build",
-        "registry": "transnext-acr-ee-sg-registry-vpc.ap-southeast-1.cr.aliyuncs.com",
-        "namespace": "ai_transnext",
+        "registry": "transnext-acr-ee-hk-registry-vpc.ap-east-1.cr.aliyuncs.com",
+        "namespace": "transnext",
         "repo": "fy-api",
         "repo_url": "https://github.com/seraph0017/Fy-api.git",
     },
@@ -88,9 +88,9 @@ TARGETS = {
         "mem": "6g",
         "cpus": "2",
     },
-    "sg-test": {
-        "host": "8.222.175.17",
-        "port": 22,
+    "hk-test": {
+        "host": "47.86.175.72",
+        "port": 58422,
         "user": "root",
         "key": "",
         "app_dir": "/opt/fy-api",
@@ -218,7 +218,7 @@ def _checkout_ref(c: Connection, cfg: dict[str, object], ref: str):
     )
 
 
-@task(help={"target": "target name: cn or sg"})
+@task(help={"target": "target name: cn or hk"})
 def info(ctx, target="cn"):
     """Print local Fabric deployment configuration."""
     cfg = _config(target)
@@ -236,7 +236,7 @@ def info(ctx, target="cn"):
     print(f"nginx:     {cfg['nginx_conf']}")
 
 
-@task(help={"target": "target name: cn or sg"})
+@task(help={"target": "target name: cn or hk"})
 def preflight(ctx, target="cn"):
     """Check SSH connectivity and OS basics without requiring app setup."""
     cfg = _config(target)
@@ -249,8 +249,8 @@ def preflight(ctx, target="cn"):
     _run(c, "command -v apt-get || command -v dnf || true")
 
 
-@task(help={"target": "target name: cn or sg"})
-def bootstrap_system(ctx, target="sg"):
+@task(help={"target": "target name: cn or hk"})
+def bootstrap_system(ctx, target="hk"):
     """Upload prod scripts and run 01-setup-system.sh on a fresh server."""
     cfg = _config(target)
     c = _connect(cfg)
@@ -280,7 +280,7 @@ def bootstrap_system(ctx, target="sg"):
     )
 
 
-@task(help={"target": "target name: cn or sg"})
+@task(help={"target": "target name: cn or hk"})
 def check(ctx, target="cn"):
     """Check remote prerequisites for deployed Fy-api service."""
     cfg = _config(target)
@@ -295,7 +295,7 @@ def check(ctx, target="cn"):
     _run(c, f"test -d {_q(str(cfg['app_dir']))}")
 
 
-@task(help={"target": "target name: cn or sg", "ref": "git ref to checkout"})
+@task(help={"target": "target name: cn or hk", "ref": "git ref to checkout"})
 def sync_code(ctx, target="cn", ref=DEFAULT_REF):
     """Fetch and checkout code on the server source directory."""
     cfg = _config(target)
@@ -306,7 +306,7 @@ def sync_code(ctx, target="cn", ref=DEFAULT_REF):
 
 @task(
     help={
-        "target": "target name: cn or sg",
+        "target": "target name: cn or hk",
         "tag": "image tag to build, e.g. v0.9.8",
         "ref": "git ref to checkout before build; defaults to the same value as tag",
         "pull": "pass --pull to podman build",
@@ -348,7 +348,7 @@ def build(ctx, target="cn", tag="", ref="", pull=True, no_cache=False):
     )
 
 
-@task(help={"target": "target name: cn or sg", "tag": "image tag to push to ACR"})
+@task(help={"target": "target name: cn or hk", "tag": "image tag to push to ACR"})
 def push_image(ctx, target="cn", tag=""):
     """Push a previously built image from the server to ACR."""
     cfg = _config(target)
@@ -356,7 +356,7 @@ def push_image(ctx, target="cn", tag=""):
     _run(c, f"podman push {_q(_image(cfg, tag))}")
 
 
-@task(help={"target": "target name: cn or sg", "tag": "image tag already present in ACR"})
+@task(help={"target": "target name: cn or hk", "tag": "image tag already present in ACR"})
 def deploy(ctx, target="cn", tag=""):
     """Deploy an ACR image with the existing blue-green script."""
     tag = _validate_arg("tag", tag)
@@ -387,7 +387,7 @@ def deploy(ctx, target="cn", tag=""):
 
 @task(
     help={
-        "target": "target name: cn or sg",
+        "target": "target name: cn or hk",
         "tag": "image tag to build/push/deploy, e.g. v0.9.8",
         "ref": "git ref to checkout; defaults to the same value as tag",
         "skip_build": "skip build step",
@@ -409,14 +409,14 @@ def release(ctx, target="cn", tag="", ref="", skip_build=False, skip_push=False,
     health(ctx, target=target)
 
 
-@task(help={"target": "target name: cn or sg", "tag": "older image tag to deploy"})
+@task(help={"target": "target name: cn or hk", "tag": "older image tag to deploy"})
 def rollback(ctx, target="cn", tag=""):
     """Rollback by deploying an older ACR image tag."""
     deploy(ctx, target=target, tag=tag)
     health(ctx, target=target)
 
 
-@task(help={"target": "target name: cn or sg"})
+@task(help={"target": "target name: cn or hk"})
 def status(ctx, target="cn"):
     """Show git ref, containers, nginx status, and disk usage."""
     cfg = _config(target)
@@ -427,7 +427,7 @@ def status(ctx, target="cn"):
     _run(c, f"df -h {_q(str(cfg['app_dir']))} /var/log/nginx 2>/dev/null | awk 'NR>1'", warn=True)
 
 
-@task(help={"target": "target name: cn or sg"})
+@task(help={"target": "target name: cn or hk"})
 def health(ctx, target="cn"):
     """Check the active local blue/green API status endpoint."""
     cfg = _config(target)
@@ -440,7 +440,7 @@ def health(ctx, target="cn"):
     )
 
 
-@task(help={"target": "target name: cn or sg", "tail": "number of container log lines"})
+@task(help={"target": "target name: cn or hk", "tail": "number of container log lines"})
 def logs(ctx, target="cn", tail=100):
     """Show logs from the active Fy-api blue/green container."""
     cfg = _config(target)

@@ -2,7 +2,7 @@
 
 Two related tools live here:
 
-1. **`sync_config.py`** — Single-direction config sync (CN Fy-api RDS → SG Fy-api via HTTP). See [`README-sync.md`](./README.md) above.
+1. **`sync_config.py`** — Single-direction config sync (CN Fy-api RDS → HK Fy-api via HTTP). See [`README-sync.md`](./README.md) above.
 2. **`fabfile.py`** — Fabric tasks for operating the entire fleet from your laptop over SSH.
 
 ## Fabric quick start
@@ -26,10 +26,10 @@ Host tracenex-cn
     User root
     IdentityFile ~/.ssh/tracenex_cn.pem
 
-Host tracenex-sg
-    HostName <your-sg-eip>
+Host tracenex-hk
+    HostName <your-hk-eip>
     User root
-    IdentityFile ~/.ssh/tracenex_sg.pem
+    IdentityFile ~/.ssh/tracenex_hk.pem
 
 # When you add a new region, add here and update fabfile.py HOSTS
 Host tracenex-us
@@ -56,8 +56,8 @@ fab status
 # Just CN
 fab -H tracenex-cn status
 
-# Just SG
-fab -H tracenex-sg status
+# Just HK
+fab -H tracenex-hk status
 
 # Show last 100 lines of Fy-api container log on all hosts
 fab logs
@@ -78,26 +78,26 @@ fab certs
 ### Deploy (blue-green, zero downtime)
 
 ```bash
-# Deploy v0.9.7 to both CN and SG (default)
+# Deploy v0.9.7 to both CN and HK (default)
 fab deploy --tag=v0.9.7
 
-# Deploy to CN only (test first, then SG)
+# Deploy to CN only (test first, then HK)
 fab deploy --tag=v0.9.7 --only=cn
 
-# After CN looks good for 24h, roll to SG
-fab deploy --tag=v0.9.7 --only=sg
+# After CN looks good for 24h, roll to HK
+fab deploy --tag=v0.9.7 --only=hk
 
 # Emergency rollback
-fab rollback --tag=v0.9.6-tracenex --only=sg
+fab rollback --tag=v0.9.6-tracenex --only=hk
 
 # Pre-warm: pull image without switching
 fab pull --tag=v0.9.7
 ```
 
-### Config sync (CN → SG)
+### Config sync (CN → HK)
 
 ```bash
-# Runs the sync script on CN, which posts to SG's /api/internal/sync/*
+# Runs the sync script on CN, which posts to HK's /api/internal/sync/*
 fab sync-config
 ```
 
@@ -126,7 +126,7 @@ fab restart-fyapi --only=cn
 
 ## Adding a new host (e.g. US / EU)
 
-1. Provision the box, run `scripts/prod/01-07` just like you did for CN/SG
+1. Provision the box, run `scripts/prod/01-07` just like you did for CN/HK
 2. Add SSH alias to `~/.ssh/config`
 3. Add entry to `HOSTS` dict at top of `fabfile.py`
 4. Verify: `fab -H tracenex-us status`
@@ -148,5 +148,5 @@ fab restart-fyapi --only=cn
 
 - `fab backup-db` — snapshot RDS via Aliyun CLI before risky deploys
 - `fab slack-notify` — post deploy status to a webhook
-- `fab drift-check` — compare channels table between CN and SG to spot sync gaps
+- `fab drift-check` — compare channels table between CN and HK to spot sync gaps
 - `fab loadtest` — trigger a canary load against a host

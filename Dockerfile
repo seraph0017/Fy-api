@@ -33,7 +33,7 @@ ENV GO111MODULE=on CGO_ENABLED=0
 # Fy-api overlay: use goproxy.cn for in-China build hosts (Aliyun ECS etc.)
 # Leaves "direct" as fallback, so upstream private modules still resolve.
 ENV GOPROXY=https://goproxy.cn,direct
-ENV GOSUMDB=sum.golang.google.cn
+ENV GOSUMDB=off
 
 ARG TARGETOS
 ARG TARGETARCH
