@@ -531,9 +531,9 @@
 - **修改文件**：
   - `relay/common/relay_info.go`：`RelayInfo` 新增 `TimeoutMultiplier int` 字段
   - `service/http_client.go`：新增 `CloneHttpClientWithTimeout` 函数，浅拷贝 client 并乘以倍率
-  - `relay/channel/api_request.go`：`doRequest` 中当 `TimeoutMultiplier > 0` 且非流式时，用倍率后的 client 发请求
+  - `relay/channel/api_request.go`：`doRequest` 中当 `TimeoutMultiplier > 0` 且非流式时，用倍率后的 client 发请求；同时通过 `net/http/httptrace` 记录 `WroteRequest` 和 `GotFirstResponseByte` 两个时间点，用于超时排查
   - `relay/image_handler.go`：`ImageHelper` 中判断路径以 `/edits` 结尾时设 `TimeoutMultiplier = 3`
-- **行为**：仅对 `/v1/images/edits` 生效，流式请求不受影响。不修改全局 client，只浅拷贝一份临时 client
+- **行为**：仅对 `/v1/images/edits` 生效，流式请求不受影响。不修改全局 client，只浅拷贝一份临时 client。同时通过 httptrace 记录请求写入耗时和首字节响应耗时，用于超时排查
 - **冲突风险**：低（3 个文件新增少量代码，均带 `// Fy-api overlay:` 注释）
 
 ---
