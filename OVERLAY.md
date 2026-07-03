@@ -71,7 +71,7 @@
 ### B-6 [deploy] Fabric 服务端构建发布自动化
 - **新增文件**：`fabfile.py`
 - **用途**：本地只执行 Fabric；远端 ECS 在 `/root/Fy-api` 拉取 Git ref，用 `git archive` 生成干净临时构建目录后 Podman 构建镜像、推送 ACR，再调用 `scripts/prod/06-deploy-blue-green.sh` 蓝绿发布；也支持新加坡新机 `bootstrap-system`
-- **默认连接**：`cn=root@8.136.146.211:58422`（`~/.ssh/tracenex_XN.pem`），`hk=root@47.83.137.1:58422`，`cn-test=root@8.156.88.148:58422`，`hk-test=root@47.86.175.72:58422`；`sg` / `sg-test` 保留在 `fabfile.py` 里仅作迁移历史兼容入口；默认源码目录 `/root/Fy-api`；均可用 `FYAPI_*` 环境变量覆盖
+- **默认连接**：`cn=root@8.136.146.211:58422`（`~/.ssh/tracenex_XN.pem`），`hk=root@47.83.137.1:58422`，`cn-test=root@8.156.88.148:58422`，`hk-test=root@47.86.175.72:58422`；默认源码目录 `/root/Fy-api`；均可用 `FYAPI_*` 环境变量覆盖
 - **冲突风险**：极低（新增根目录运维入口，不改 upstream 业务代码）
 - **Merge 策略**：保留文件；若部署脚本参数变化，同步更新 `deploy` / `release` 任务
 
@@ -121,7 +121,7 @@
 - **修改文件**：`relay/channel/gemini/adaptor.go`（`GetRequestURL`，紧接 `GetGeminiVersionSetting` 调用之后追加分支）
 - **修改文件**：`setting/model_setting/gemini.go`（默认 `VersionSettings` map 显式钉住 image-preview 模型到 `v1beta`）
 - **新增测试**：`relay/channel/gemini/relay_gemini_usage_test.go::TestGeminiAdaptorGetRequestURLPreservesNativeVersion`（4 个 sub-test，覆盖 native v1beta、native v1、imagen native v1beta、OpenAI 兼容入口回落 model_setting 四条路径）
-- **背景**：海外 SG 部署反馈 `gemini-3-pro-image-preview` 的 native Gemini 调用报 `is not found for API version v1`。Upstream 原始实现里 `GetRequestURL` 一律读 `model_setting.GetGeminiVersionSetting()`，无视客户端写的 `/v1beta/...` 还是 `/v1/...` 路径；后台 `VersionSettings.default` 为 `v1beta` 但任何管理员改动或显式映射都会把 image-preview 这种只在 `v1beta` 暴露的模型踩坑
+- **背景**：海外 HK 部署反馈 `gemini-3-pro-image-preview` 的 native Gemini 调用报 `is not found for API version v1`。Upstream 原始实现里 `GetRequestURL` 一律读 `model_setting.GetGeminiVersionSetting()`，无视客户端写的 `/v1beta/...` 还是 `/v1/...` 路径；后台 `VersionSettings.default` 为 `v1beta` 但任何管理员改动或显式映射都会把 image-preview 这种只在 `v1beta` 暴露的模型踩坑
 - **修复**：在 `RelayMode == constant.RelayModeGemini` 的 native pass-through 路径下，按 `info.RequestURLPath` 前缀（`/v1beta/` 或 `/v1/`）覆盖 `version`；OpenAI / Claude 兼容入口（`RelayModeChatCompletions` 等）继续使用 `model_setting`，行为不变。配合 `gemini.go` 显式钉住的 image-preview 模型，原生入口 + 兼容入口双层兜底
 - **冲突风险**：低（adaptor.go 内只新增一段 `if` 分支，带 `// Fy-api overlay:` 注释；gemini.go 默认 map 只新增 key）
 - **Merge 策略**：上游若改动 `GetRequestURL` 的版本拼接逻辑，保留这段 native pass-through 覆盖；若上游改 `defaultGeminiSettings.VersionSettings`，按需合并新增的 image-preview 项
@@ -131,7 +131,7 @@
   - `dto/channel_settings.go`（`ChannelOtherSettings` 新增 `AllowContextManagement bool`，紧跟 `AllowSpeed` 后）
   - `relay/common/relay_info.go`（`RemoveDisabledFields` 中新增一段 `delete(data, "context_management")`，并在函数顶部 doc 中登记该字段）
 - **新增测试**：`relay/common/override_test.go::TestRemoveDisabledFieldsContextManagement`（3 个 sub-test：默认裁剪 / `AllowContextManagement=true` 保留 / channel pass-through 保留），同时把 `TestRemoveDisabledFieldsDefaultFiltering` 的输入扩展为含 `context_management`
-- **背景**：海外 SG 反馈 `claude-sonnet-4-6` 调用上游返回 `context_management: Extra inputs are not permitted`。Anthropic 的 `context_management` 是 beta 功能，必须配合 `anthropic-beta: context-management-2025-...` header 才能用。客户端（含部分 SDK）会只在 body 里塞这个字段、不带 header，被 Anthropic schema 校验直接拒
+- **背景**：海外 HK 反馈 `claude-sonnet-4-6` 调用上游返回 `context_management: Extra inputs are not permitted`。Anthropic 的 `context_management` 是 beta 功能，必须配合 `anthropic-beta: context-management-2025-...` header 才能用。客户端（含部分 SDK）会只在 body 里塞这个字段、不带 header，被 Anthropic schema 校验直接拒
 - **upstream 现状**：upstream 在 `30cb3b8b`（2025-09-30 "feat: claude context editing"）只在 `dto.ClaudeRequest` 里加了 `ContextManagement` 字段做识别，没有像 `inference_geo / speed / service_tier` 那样接入 `RemoveDisabledFields` 默认过滤体系。这是 upstream 的遗漏；本仓库选择直接 overlay 修复，**不**向 upstream 提 PR
 
 ### B-10 [billing] wan2.6 图像/视频模型定价与展示
@@ -300,7 +300,7 @@
   - `relay/channel/aws/dto.go`（Bedrock AK/SK 路径把 `anthropic-beta` header 转成 body `anthropic_beta` 前，先按 Bedrock 支持列表映射/过滤；无兼容 token 时不发送该字段；同时丢弃客户端 body 自带的 `anthropic_beta` / `output_config`）
   - `relay/channel/aws/relay-aws.go`（AWS Claude pass-through body 路径同样删除 `anthropic_beta` / `output_config`，避免绕过 `formatRequest` 的兜底过滤）
   - `relay/channel/aws/relay_aws_test.go`（覆盖支持 token 保留、`advanced-tool-use-2025-11-20` 映射成 `tool-search-tool-2025-10-19`、不支持 token 被删除、body 自带 beta 删除、pass-through 删除 Bedrock 不兼容字段）
-- **背景**：SG 生产 Bedrock 流式调用报 `ValidationException: invalid beta flag`，后续日志还出现 `output_config.format: Extra inputs are not permitted`。直连 Anthropic 支持的 beta/header/body 扩展集合大于 AWS Bedrock 支持集合，原实现把 `anthropic-beta` 原样拆分写入 Bedrock body 的 `anthropic_beta`，且 pass-through 会把原始 body 的不兼容字段直接发给 Bedrock。
+- **背景**：HK 生产 Bedrock 流式调用报 `ValidationException: invalid beta flag`，后续日志还出现 `output_config.format: Extra inputs are not permitted`。直连 Anthropic 支持的 beta/header/body 扩展集合大于 AWS Bedrock 支持集合，原实现把 `anthropic-beta` 原样拆分写入 Bedrock body 的 `anthropic_beta`，且 pass-through 会把原始 body 的不兼容字段直接发给 Bedrock。
 - **行为**：后端默认按 AWS Bedrock Claude Messages 当前支持的 beta token 做白名单，并保留已有前端 “AWS Bedrock Claude 兼容模板” 的核心映射语义；渠道级 header override 仍先执行，随后 Bedrock adaptor 做最后兜底过滤。客户端 body 自带的 `anthropic_beta` 不被信任，统一由过滤后的 header 重建；`output_config` 暂按 Bedrock 不兼容字段在 AWS 边界删除。
 - **冲突风险**：低（AWS adaptor 局部新增 helper；若 upstream 后续实现 Bedrock beta 白名单或官方支持 `output_config`，合并时对齐官方支持列表即可）
 
@@ -311,14 +311,14 @@
 - **修改文件**：
   - `relay/channel/aws/relay-aws.go`（`sanitizeBedrockClaudeRawFields` +1 行调用 `filterBedrockToolsRaw`）
   - `relay/channel/aws/dto.go`（`sanitizeBedrockClaudeRawFieldsFromStruct` +1 行调用 `filterBedrockToolsFromStruct`）
-- **背景**：SG 生产 momo 客户流量出现 400 `ValidationException: tools.N: Input tag 'web_search_20250305' / 'advisor_20260301' found using 'type' does not match any of the expected tags`。Bedrock Claude Messages 仅接受有限的 tool type 集合，Anthropic 直连支持的扩展 tool type 在 Bedrock 侧会被拒绝。
+- **背景**：HK 生产 momo 客户流量出现 400 `ValidationException: tools.N: Input tag 'web_search_20250305' / 'advisor_20260301' found using 'type' does not match any of the expected tags`。Bedrock Claude Messages 仅接受有限的 tool type 集合，Anthropic 直连支持的扩展 tool type 在 Bedrock 侧会被拒绝。
 
 - **行为**：在发送请求到 Bedrock 前，按白名单过滤 tools 数组中不支持的 type，静默丢弃不兼容工具而非返回 400 给客户端。
 - **冲突风险**：极低（独立新文件 + 两处各 +1 行；与 B-16 同一函数但不同行，合并时仅需保留两行调用）
 
 ### B-27 [ops/report] 毛利报表脚本与 agent skill
 - **新增/修改文件**：
-  - `scripts/ops/gross_profit_report.py`（CN/SG 多环境毛利 CSV 报表；本地 RDS 直连失败时自动 SSH 到生产机本地 MySQL 聚合查询；`detail.csv` 按运营表格格式输出：`日期 / 环境 / 用户 / 渠道ID / 渠道 / 模型 / 请求数 / 输入Tokens / 输出Tokens / 折扣倍率 / 收入(USD) / 成本(USD) / 毛利(USD) / 毛利率(%)`）
+  - `scripts/ops/gross_profit_report.py`（CN/HK 多环境毛利 CSV 报表；本地 RDS 直连失败时自动 SSH 到生产机本地 MySQL 聚合查询；`detail.csv` 按运营表格格式输出：`日期 / 环境 / 用户 / 渠道ID / 渠道 / 模型 / 请求数 / 输入Tokens / 输出Tokens / 折扣倍率 / 收入(USD) / 成本(USD) / 毛利(USD) / 毛利率(%)`）
   - `scripts/ops/test_gross_profit_report.py`（锁定明细 CSV 表头、列顺序、日志有效折扣倍率、缺失倍率不伪装为 1）
   - `.agents/skills/gross-profit-report/SKILL.md`（Codex 项目内技能；全局副本需同步到 `~/.codex/skills/gross-profit-report` 和 `~/.claude/skills/gross-profit-report`）
 - **行为**：`折扣倍率` 来自日志 `other.group_ratio` 的聚合有效倍率 `SUM(quota) / SUM(quota / group_ratio)`；缺失/非法倍率在 CSV 中显示 `缺失` 并写入 `warnings.csv`，不能临时写死为 `1`。`channel_costs.yaml` 的 `cost_factor` 只用于成本修正，不作为折扣倍率列展示。日期格式为运营表格使用的 `YYYY/M/D`。
@@ -330,7 +330,7 @@
   - `relay/channel/aws/bedrock_temperature_filter_test.go`（覆盖：黑名单模型剥离、非黑名单模型保留、raw map 路径）
 - **修改文件**：
   - `relay/channel/aws/relay-aws.go`（`doAwsClientRequest` +1 行 `stripBedrockDeprecatedTemperature`；`buildAwsRequestBody` +1 行 `stripBedrockDeprecatedTemperatureRaw`）
-- **背景**：SG 生产 momo 客户流量出现 400 `ValidationException: 'temperature' is deprecated for this model`（claude-opus-4-7 via Bedrock channel #27；2026-06-25 海外测试 `claude-opus-4-8` 也返回同类错误）。Bedrock 对部分新模型不再接受 temperature 参数。
+- **背景**：HK 生产 momo 客户流量出现 400 `ValidationException: 'temperature' is deprecated for this model`（claude-opus-4-7 via Bedrock channel #27；2026-06-25 海外测试 `claude-opus-4-8` 也返回同类错误）。Bedrock 对部分新模型不再接受 temperature 参数。
 - **行为**：在发送请求到 Bedrock 前，根据模型黑名单剥离 temperature 字段，静默丢弃而非返回 400 给客户端。
 - **冲突风险**：极低（独立新文件 + relay-aws.go 两处各 +1 行；与 B-17 同一区域但不同行）
 
@@ -426,7 +426,7 @@
 - **背景**：渠道编辑页支持多选分组，前端保存时会把分组列表拼成逗号分隔字符串写入 `channels.group`。原 `varchar(64)` 在分组较多或分组名较长时会触发 MySQL `Error 1406 (22001): Data too long for column 'group'`
 - **行为**：新部署在 MySQL/PostgreSQL 上启动时会自动把 `channels.group` 扩到 `varchar(255)`；SQLite 无需额外迁移
 - **冲突风险**：低（`Channel` 模型字段宽度调整 + 独立迁移函数）
-- **Merge 策略**：若 upstream 后续也调整 `channels.group` 类型，优先采用上游实现；否则保留本迁移，避免 SG/CN 老库 schema 偏小
+- **Merge 策略**：若 upstream 后续也调整 `channels.group` 类型，优先采用上游实现；否则保留本迁移，避免 HK/CN 老库 schema 偏小
 
 ### B-24 [tnbiz] Outbox publisher (Aliyun MNS, shadow + enabled)
 - **新增文件**：
@@ -434,7 +434,7 @@
   - `service/outbox/runner_test.go`
 - **修改文件**：`main.go`（+`outbox.NewRunner(region, topic, nil).Start(overlayCtx)`，紧接 flag poller / OverrideLookup 注入之后）
 - **冲突风险**：极低（独立子包 + main.go 一段 patch）
-- **Feature flag**：`overlay.outbox_mode`（off / shadow / enabled），region 由 `DATA_REGION` 环境变量注入（cn / sg），强制 region 隔离 invariant
+- **Feature flag**：`overlay.outbox_mode`（off / shadow / enabled），region 由 `DATA_REGION` 环境变量注入（cn / hk），强制 region 隔离 invariant
 
 ### B-25 [tnbiz] internal_idempotency + internal_api_key (HMAC keystore + idempotency 表)
 - **新增文件**：
@@ -452,7 +452,7 @@
 - **修改文件**：
   - `relay/channel/aws/dto.go`（`sanitizeBedrockClaudeRawFieldsFromStruct` +2 行调用）
   - `relay/channel/aws/relay-aws.go`（`sanitizeBedrockClaudeRawFields` +2 行调用）
-- **背景**：SG 生产 momo 客户流量（channel #27 AWS Bedrock）5/21 出现 18 次 400 `cache_control.ephemeral.scope: Extra inputs are not permitted` 和 5 次 `text content blocks must be non-empty`。Bedrock schema 校验比 Anthropic 原生 API 更严格：(1) 不接受 `cache_control` 内的 `scope` 字段；(2) 不允许 `type:"text"` 且 `text:""` 的空块。
+- **背景**：HK 生产 momo 客户流量（channel #27 AWS Bedrock）5/21 出现 18 次 400 `cache_control.ephemeral.scope: Extra inputs are not permitted` 和 5 次 `text content blocks must be non-empty`。Bedrock schema 校验比 Anthropic 原生 API 更严格：(1) 不接受 `cache_control` 内的 `scope` 字段；(2) 不允许 `type:"text"` 且 `text:""` 的空块。
 - **行为**：请求发往 Bedrock 前，静默移除 system/messages 中所有 `cache_control.scope`，并过滤掉空 text content block。不改变请求语义——`cache_control.type` 保留，非空 text block 保留。
 - **冲突风险**：极低（独立新文件 + 两处各 +2 行，与 B-17 同一函数但不同行）
 
@@ -484,7 +484,7 @@
   - Seedance 2.0 优先使用 provider `usage.completion_tokens`，否则按 `(输入视频时长 + 输出视频时长) × 输出宽 × 输出高 × fps / 1024` 估算；价格按 `doubao-seedance-2.0` 720p/1080p、`doubao-seedance-2.0-fast`、`doubao-seedance-2.0-mini` 官网元/百万 token 档位。
   - MediaKit 当前 pipeline 使用 `tool_version=standard`、`resolution=1080p`、`scene=aigc`；成本按 `输出时长分钟 × 计费换算系数 × 0.75 元/分钟`，标准版/专业版共用 0.75 基价，专业版仅通过更高系数放大。不得把“画质增强（大模型）”的 2.5 元/分钟基价套到 standard/professional。
   - 新增 `cost_price_version`、`rmb_per_usd`、generation/enhance RMB/quota、billable tokens、billing coefficient、gross profit/margin 等字段到 `model.SeedanceEnhancePipeline`，并在现有 JSON 字段内保存 `generation_cost_detail` / `enhance_cost_detail`（公式 key/version/text、变量、系数、usage source、`cost_quota`、`cost_rmb`），不新增成本表；task billing `other` 同步输出内部 `*_estimate_*` 和 `provider_cost_estimate_details` 字段，供数据库同步后做报表。
-  - CN/SG 两个平台展示币种可能不同，内部 provider cost 以 `cost_quota` 为主口径，RMB 仅作为供应商价格来源和对账辅助；换算公式固定记录为 `cost_quota = round(cost_rmb / rmb_per_usd * quota_per_unit)`。
+  - CN/HK 两个平台展示币种可能不同，内部 provider cost 以 `cost_quota` 为主口径，RMB 仅作为供应商价格来源和对账辅助；换算公式固定记录为 `cost_quota = round(cost_rmb / rmb_per_usd * quota_per_unit)`。
   - 用户侧日志列表和 `/api/log/self/export?format=json` 统一脱敏 provider cost、公式、变量、系数、毛利等内部字段；管理员日志和 admin export 保留完整成本明细。用户实际扣费仍由原任务 billing pipeline 决定。
   - MediaKit 闲时/低优先级不按本地时间推断；当前把 provider 返回的 `task_type` 记录为 `enhance_provider_task_type`，任务等级仍默认 `normal`，未来若官方为 `enhance-video` 提供显式低优先级字段，再按提交参数或返回字段扩展。
 - **参考文档**：`docs/seedance-mediakit-cost-plan.md`

@@ -6,7 +6,15 @@ environments:
     ssh: "ssh -i ~/.ssh/tracenex_XN.pem -p 58422 root@8.136.146.211"
     dsn_env_file: "/opt/fy-api/config/fy-api.env"
     dsn_var: "SQL_DSN"
-  sg:
-    ssh: "ssh -i ~/.ssh/AI_tracenex.pem -p 58422 root@47.236.133.70"
+  cn-test:
+    ssh: "ssh -i ~/.ssh/tracenex_XN.pem -p 58422 root@8.156.88.148"
+    dsn_env_file: "/opt/fy-api/config/fy-api.env"
+    dsn_var: "SQL_DSN"
+  hk:
+    ssh: "ssh -i ~/.ssh/tracenex_XN.pem -p 58422 root@47.83.137.1"
+    dsn_env_file: "/opt/fy-api/config/fy-api.env"
+    dsn_var: "SQL_DSN"
+  hk-test:
+    ssh: "ssh -p 58422 root@47.86.175.72"
     dsn_env_file: "/opt/fy-api/config/fy-api.env"
     dsn_var: "SQL_DSN"

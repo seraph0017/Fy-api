@@ -22,7 +22,7 @@ python3 tests/e2e/responses_regression_e2e.py --dry-run
 python3 tests/e2e/responses_regression_e2e.py
 ```
 
-默认会自动发现 `sg-test` 的：
+默认会自动发现 `hk-test` 的：
 
 - `FYAPI_E2E_BASE_URL`
 - `FYAPI_E2E_TOKEN`
@@ -44,7 +44,7 @@ python3 tests/e2e/responses_regression_e2e.py
 如需切到其他环境：
 
 ```bash
-python3 tests/e2e/pr94_compat_e2e.py --target-env sg-test --dry-run
+python3 tests/e2e/pr94_compat_e2e.py --target-env hk-test --dry-run
 python3 tests/e2e/pr94_compat_e2e.py --target-env cn-test --dry-run
 python3 tests/e2e/responses_regression_e2e.py --target-env hk-test --dry-run
 ```
@@ -84,7 +84,7 @@ export FYAPI_E2E_TIMEOUT=90
 ## 说明
 
 - 默认使用 channel pin，要求发现到的 token 属于 admin 用户
-- `sg-test` 当前可自动发现 Bedrock Claude 和普通 Claude 两组默认值
+- `hk-test` 当前可自动发现 Bedrock Claude 和普通 Claude 两组默认值
 - `cn-test` 当前没有真正的 AWS `type=33` Claude 渠道，所以 Bedrock 用例默认不会自动补全
 - `hk-test` 当前适合验证海外 OpenAI Responses 兼容性；国内环境默认不验证这两个场景
 - `FYAPI_E2E_BEDROCK_MODEL` 必须实际走 AWS Bedrock Claude 渠道

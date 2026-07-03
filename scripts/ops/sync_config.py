@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # scripts/ops/sync_config.py
 #
-# 单向同步特定表:国内 Fy-api RDS → 新加坡 Fy-api (通过 admin API)
+# 单向同步特定表:国内 Fy-api RDS → 香港 Fy-api (通过 admin API)
 #
 # 同步的表(白名单):
 #   - channels     (去掉 key / openai_organization 等凭据字段)
@@ -13,8 +13,8 @@
 # 用法:
 #   环境变量:
 #     CN_DB_DSN          — 国内 RDS 连接 mysql://user:pass@host:3306/db
-#     SG_API_BASE        — https://api.tracenex.sg
-#     SG_INTERNAL_TOKEN  — 预共享密钥(见 Fy-api 的 /api/internal/sync endpoint)
+#     HK_API_BASE        — https://api.tracenex.hk
+#     HK_INTERNAL_TOKEN  — 预共享密钥(见 Fy-api 的 /api/internal/sync endpoint)
 #     STATE_FILE         — 持久化 last_sync_time 的文件路径(默认 /tmp/fy_sync_state.json)
 #
 # 触发方式:
@@ -24,7 +24,7 @@
 # 返回码:
 #   0  正常
 #   1  配置/连接错误
-#   2  部分同步失败(SG 返 5xx)
+#   2  部分同步失败(HK 返 5xx)
 
 import json
 import logging
@@ -143,10 +143,10 @@ def fetch_options(conn) -> list[dict]:
     return safe
 
 
-def push_to_sg(endpoint: str, payload: dict) -> tuple[bool, str]:
-    url = f"{os.environ['SG_API_BASE'].rstrip('/')}{endpoint}"
+def push_to_hk(endpoint: str, payload: dict) -> tuple[bool, str]:
+    url = f"{os.environ['HK_API_BASE'].rstrip('/')}{endpoint}"
     headers = {
-        "Authorization": f"Bearer {os.environ['SG_INTERNAL_TOKEN']}",
+        "Authorization": f"Bearer {os.environ['HK_INTERNAL_TOKEN']}",
         "Content-Type": "application/json",
     }
     try:
@@ -165,7 +165,7 @@ def chunk(items: list, size: int):
 
 def main() -> int:
     # ---- 校验环境变量 ----
-    for k in ("CN_DB_DSN", "SG_API_BASE", "SG_INTERNAL_TOKEN"):
+    for k in ("CN_DB_DSN", "HK_API_BASE", "HK_INTERNAL_TOKEN"):
         if not os.environ.get(k):
             log.error(f"缺少环境变量: {k}")
             return 1
@@ -190,7 +190,7 @@ def main() -> int:
         log.info(f"channels: 发现 {len(channels)} 条变更")
         count = 0
         for batch in chunk(channels, BATCH_SIZE):
-            ok, msg = push_to_sg("/api/internal/sync/channels", {"channels": batch})
+            ok, msg = push_to_hk("/api/internal/sync/channels", {"channels": batch})
             if ok:
                 count += len(batch)
             else:
@@ -204,7 +204,7 @@ def main() -> int:
         # ---- 2. abilities ----
         abilities = fetch_abilities(conn)
         log.info(f"abilities: 全量 {len(abilities)} 条")
-        ok, msg = push_to_sg("/api/internal/sync/abilities",
+        ok, msg = push_to_hk("/api/internal/sync/abilities",
                              {"abilities": abilities, "mode": "replace"})
         if ok:
             synced["abilities"] = len(abilities)
@@ -214,7 +214,7 @@ def main() -> int:
         # ---- 3. options ----
         options = fetch_options(conn)
         log.info(f"options: 白名单 {len(options)} 条")
-        ok, msg = push_to_sg("/api/internal/sync/options", {"options": options})
+        ok, msg = push_to_hk("/api/internal/sync/options", {"options": options})
         if ok:
             synced["options"] = len(options)
         else:
