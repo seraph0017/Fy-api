@@ -561,16 +561,19 @@
 
 ### F-4 [docs] 内嵌产品文档页
 - **新增文件**：
-  - `web/classic/src/pages/FyApiDocs/index.jsx`（重命名自 TraceNexDocs）
+  - `web/classic/src/pages/FyApiDocs/index.jsx`（重命名自 TraceNexDocs；当前 `/docs` 入口跳转到统一静态产品文档页）
   - `web/classic/src/components/common/NewMarkdownRender/NewMarkdownRender.jsx`
-  - `web/classic/public/product-docs/TraceNex.md`
+  - `web/classic/public/product-docs/api-reference.html`（合并页：顶部 3 个路由式链接 `API 接口文档` / `模型接入指南` / `平台功能指南`）
+  - `web/classic/public/product-docs/index.html`（兼容入口，跳转到合并页）
+  - `web/classic/public/product-docs/model-integration-guide.html`（旧链接兼容，跳转到合并页模型接入标签）
+  - `web/classic/public/product-docs/TraceNex.md`（旧 Markdown 链接兼容说明，避免继续暴露过期内部内容）
   - `web/classic/public/product-docs/images/image1.png` ~ `image18.png`
 - **修改文件**：`web/classic/src/App.jsx`
   - 第 ~59 行：`const FyApiDocs = lazy(() => import('./pages/FyApiDocs'));`
   - 第 ~365 行：`<Route path='/docs' element={<Suspense>...</Suspense>} />`
-- **运行时品牌**：`web/classic/src/pages/FyApiDocs/index.jsx` 读取 `StatusContext.status.system_name`，加载标题和 Markdown 渲染内容会把文档模板中的 `TraceNex` 替换为当前环境品牌，避免 HK 等白标环境直接露出 TraceNex
+- **运行时品牌**：统一静态产品文档页会读取 `/api/status` 的 `system_name` 更新页面标题和顶部品牌；正文使用通用“API 网关”表述，避免 HK 等白标环境直接露出 TraceNex
 - **冲突风险**：低（App.jsx 两处小改，Suspense pattern 和 upstream 一致）
-- **注意**：物理目录必须是 `product-docs/` 而不是 `docs/`，否则与 SPA 路由 `/docs` 冲突（static 中间件 301 到尾斜杠，前端路由再 301 去掉斜杠 → 死循环）。markdown 内图片路径全部用绝对路径 `/product-docs/images/...`。
+- **注意**：物理目录必须是 `product-docs/` 而不是 `docs/`，否则与 SPA 路由 `/docs` 冲突（static 中间件 301 到尾斜杠，前端路由再 301 去掉斜杠 → 死循环）。产品文档内图片路径全部用绝对路径 `/product-docs/images/...`。
 
 ### F-5 [csv-export] 日志页 "导出 CSV" 按钮
 - **新增文件**：`web/classic/src/components/table/usage-logs/UsageLogsExportButton.jsx`
