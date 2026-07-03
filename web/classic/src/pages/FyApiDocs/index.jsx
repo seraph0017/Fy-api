@@ -16,16 +16,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import React, { useEffect } from 'react';
+import React from 'react';
 
 // Fy-api overlay: 产品文档已合并为静态单页，/docs 入口跳转到平台功能指南标签。
 const PRODUCT_DOCS_URL = '/product-docs/api-reference.html#platform';
 
 export default function FyApiDocs() {
-  useEffect(() => {
-    window.location.replace(PRODUCT_DOCS_URL);
-  }, []);
-
   return (
     <div style={{
       minHeight: '60vh',
@@ -35,7 +31,18 @@ export default function FyApiDocs() {
       padding: '48px 16px',
       color: 'rgb(31, 35, 41)',
     }}>
-      <a href={PRODUCT_DOCS_URL}>正在打开平台功能指南...</a>
+      <iframe
+        src={PRODUCT_DOCS_URL}
+        title="产品文档"
+        style={{
+          width: '100%',
+          height: 'calc(100vh - 64px)',
+          border: 'none',
+          position: 'absolute',
+          top: 64,
+          left: 0,
+        }}
+      />
     </div>
   );
 }
