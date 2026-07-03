@@ -496,6 +496,11 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 		client = service.GetHttpClient()
 	}
 
+	// Fy-api overlay: image-edit-timeout-3x — multiply RELAY_TIMEOUT for slow endpoints
+	if info.TimeoutMultiplier > 0 && !info.IsStream {
+		client = service.CloneHttpClientWithTimeout(client, info.TimeoutMultiplier)
+	}
+
 	var stopPinger context.CancelFunc
 	if info.IsStream {
 		helper.SetEventStreamHeaders(c)

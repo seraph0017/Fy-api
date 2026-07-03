@@ -1,6 +1,6 @@
 # TraceNex 定制清单（OVERLAY.md）
 
-> 最后更新：2026-06-15（同步上游 `upstream/main`，保留 TraceNex overlay）
+> 最后更新：2026-07-03（image-edit-timeout-3x）
 > 维护人：<你的名字>
 > 上游基线：new-api @ `9bc1a53d` (2026-06-15)
 >
@@ -522,6 +522,19 @@
 - **配置**：不改 `channels` 表结构。现有 type 45 渠道继续用 `channel.key` 调主视频接口；Ark Asset Service 凭证存入渠道 `settings` JSON：`seedance_asset_access_key`、`seedance_asset_secret_key`、`seedance_asset_group_id`，可选 `seedance_asset_project_name` / `seedance_asset_region` / `seedance_asset_endpoint` / `seedance_asset_timeout_seconds`
 - **行为**：客户仍通过 `/v1/videos` 传普通真人图片 URL；fy-api 内部异步准备可信素材，审核通过后改写成 `asset://...` 再提交 Seedance。素材创建/审核/二次提交失败时任务失败并复用现有异步任务退款逻辑。视频任务进入最终态 success/failure 后，轮询器 best-effort 调用 `DeleteAsset` 清理本任务创建的 Ark asset；删除失败只写入 `cleanup_status=failed` 和日志，不影响用户任务结果。
 - **冲突风险**：中（`relay/relay_task.go` 和 `service/task_polling.go` 是任务提交/轮询核心；保留 overlay 注释和单测，upstream 同步时不能丢掉 staged task 的 private data）
+
+---
+
+### B-30 [image-edit] /v1/images/edits 超时时间 3x
+
+- **问题**：gpt-image-2 `/v1/images/edits` 图片编辑耗时波动大（21s ~ 2348s，平均 ~296s），全局 `RELAY_TIMEOUT`（HK 环境 = 600s）经常不够用，导致 `context deadline exceeded` 后重试多个渠道全部失败
+- **修改文件**：
+  - `relay/common/relay_info.go`：`RelayInfo` 新增 `TimeoutMultiplier int` 字段
+  - `service/http_client.go`：新增 `CloneHttpClientWithTimeout` 函数，浅拷贝 client 并乘以倍率
+  - `relay/channel/api_request.go`：`doRequest` 中当 `TimeoutMultiplier > 0` 且非流式时，用倍率后的 client 发请求
+  - `relay/image_handler.go`：`ImageHelper` 中判断路径以 `/edits` 结尾时设 `TimeoutMultiplier = 3`
+- **行为**：仅对 `/v1/images/edits` 生效，流式请求不受影响。不修改全局 client，只浅拷贝一份临时 client
+- **冲突风险**：低（3 个文件新增少量代码，均带 `// Fy-api overlay:` 注释）
 
 ---
 
