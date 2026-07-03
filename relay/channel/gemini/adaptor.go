@@ -141,113 +141,83 @@ func isGeminiImagePreviewModel(model string) bool {
 // image-preview models through generateContent, which returns inlineData image
 // parts instead of Imagen predictions.
 func (a *Adaptor) convertGeminiImagePreviewRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.ImageRequest) (any, error) {
-	content := []any{
-		map[string]any{
-			"type": "text",
-			"text": request.Prompt,
-		},
+	parts := []dto.GeminiPart{}
+	if strings.TrimSpace(request.Prompt) != "" {
+		parts = append(parts, dto.GeminiPart{Text: request.Prompt})
 	}
 
 	if info.RelayMode == relayconstant.RelayModeImagesEdits {
 		hasInputImage := false
 		if isMultipartFormRequest(c) {
-			if imageData, mimeType, err := readMultipartImageData(c, "image", "image[]"); err != nil {
+			if imageParts, err := readMultipartImageParts(c, "image", "image[]"); err != nil {
 				return nil, err
-			} else if imageData != "" {
+			} else if len(imageParts) > 0 {
 				hasInputImage = true
-				content = append(content, map[string]any{
-					"type": "image_url",
-					"image_url": map[string]any{
-						"url":       imageData,
-						"mime_type": mimeType,
-					},
-				})
+				parts = append(parts, imageParts...)
 			}
-			if maskData, maskMimeType, err := readMultipartImageData(c, "mask"); err != nil {
+			if maskParts, err := readMultipartImageParts(c, "mask"); err != nil {
 				return nil, err
-			} else if maskData != "" {
-				content = append(content, map[string]any{
-					"type": "image_url",
-					"image_url": map[string]any{
-						"url":       maskData,
-						"mime_type": maskMimeType,
-					},
-				})
+			} else if len(maskParts) > 0 {
+				parts = append(parts, dto.GeminiPart{Text: "Use the next image as the edit mask."})
+				parts = append(parts, maskParts...)
 			}
 		}
-		if imageData, mimeType, err := rawImageDataFromJSON(request.Image); err != nil {
+		if imageParts, err := rawImagePartsFromJSON(request.Image); err != nil {
 			return nil, err
-		} else if imageData != "" {
+		} else if len(imageParts) > 0 {
 			hasInputImage = true
-			content = append(content, map[string]any{
-				"type": "image_url",
-				"image_url": map[string]any{
-					"url":       imageData,
-					"mime_type": mimeType,
-				},
-			})
+			parts = append(parts, imageParts...)
 		}
-		if maskData, maskMimeType, err := rawImageDataFromJSON(request.Mask); err != nil {
+		if imageParts, err := rawImagePartsFromJSON(request.Images); err != nil {
 			return nil, err
-		} else if maskData != "" {
-			content = append(content, map[string]any{
-				"type": "image_url",
-				"image_url": map[string]any{
-					"url":       maskData,
-					"mime_type": maskMimeType,
-				},
-			})
+		} else if len(imageParts) > 0 {
+			hasInputImage = true
+			parts = append(parts, imageParts...)
+		}
+		if maskParts, err := rawImagePartsFromJSON(request.Mask); err != nil {
+			return nil, err
+		} else if len(maskParts) > 0 {
+			parts = append(parts, dto.GeminiPart{Text: "Use the next image as the edit mask."})
+			parts = append(parts, maskParts...)
 		} else if request.Mask != nil && len(request.Mask) > 0 {
-			content = append(content, map[string]any{
-				"type": "text",
-				"text": "apply the provided mask",
-			})
+			parts = append(parts, dto.GeminiPart{Text: "Apply the provided mask."})
 		}
 		if !hasInputImage {
 			return nil, errors.New("image is required")
 		}
 	}
 
-	geminiReq := &dto.GeneralOpenAIRequest{
-		Model: request.Model,
-		Messages: []dto.Message{
-			{
-				Role:    "user",
-				Content: content,
-			},
-		},
+	if len(parts) == 0 {
+		return nil, errors.New("prompt is required")
 	}
 
+	geminiReq := &dto.GeminiChatRequest{
+		Contents: []dto.GeminiChatContent{
+			{
+				Role:  "user",
+				Parts: parts,
+			},
+		},
+		GenerationConfig: dto.GeminiChatGenerationConfig{
+			ResponseModalities: []string{"TEXT", "IMAGE"},
+		},
+	}
 	if request.N != nil && *request.N > 0 {
-		geminiReq.N = lo.ToPtr(int(*request.N))
+		geminiReq.GenerationConfig.CandidateCount = lo.ToPtr(int(*request.N))
 	}
 
 	config := processGeminiImageSizeParameters(strings.TrimSpace(request.Size), request.Quality)
 	if config.AspectRatio != "" || config.ImageSize != "" {
 		imageConfig := make(map[string]any)
 		if config.AspectRatio != "" {
-			imageConfig["aspect_ratio"] = config.AspectRatio
+			imageConfig["aspectRatio"] = config.AspectRatio
 		}
 		if config.ImageSize != "" {
-			imageConfig["image_size"] = config.ImageSize
+			imageConfig["imageSize"] = config.ImageSize
 		}
-		geminiReq.ExtraBody, _ = common.Marshal(map[string]any{
-			"google": map[string]any{
-				"image_config": imageConfig,
-			},
-		})
+		geminiReq.GenerationConfig.ImageConfig, _ = common.Marshal(imageConfig)
 	}
-
-	convertedRequest, err := a.ConvertOpenAIRequest(c, info, geminiReq)
-	if err != nil {
-		return nil, err
-	}
-	if request.N != nil && *request.N > 0 {
-		if geminiChatRequest, ok := convertedRequest.(*dto.GeminiChatRequest); ok {
-			geminiChatRequest.GenerationConfig.CandidateCount = lo.ToPtr(int(*request.N))
-		}
-	}
-	return convertedRequest, nil
+	return geminiReq, nil
 }
 
 func isMultipartFormRequest(c *gin.Context) bool {
@@ -257,69 +227,95 @@ func isMultipartFormRequest(c *gin.Context) bool {
 	return strings.Contains(c.Request.Header.Get("Content-Type"), "multipart/form-data")
 }
 
-func readMultipartImageData(c *gin.Context, fieldNames ...string) (string, string, error) {
+func readMultipartImageParts(c *gin.Context, fieldNames ...string) ([]dto.GeminiPart, error) {
 	form, err := common.ParseMultipartFormReusable(c)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to parse image edit form request: %w", err)
+		return nil, fmt.Errorf("failed to parse image edit form request: %w", err)
 	}
 
-	var fileHeader *multipart.FileHeader
+	fileHeaders := make([]*multipart.FileHeader, 0)
 	for _, key := range fieldNames {
-		if files := form.File[key]; len(files) > 0 {
-			fileHeader = files[0]
-			break
+		fileHeaders = append(fileHeaders, form.File[key]...)
+	}
+	if len(fileHeaders) == 0 {
+		return nil, nil
+	}
+
+	parts := make([]dto.GeminiPart, 0, len(fileHeaders))
+	for _, fileHeader := range fileHeaders {
+		file, err := fileHeader.Open()
+		if err != nil {
+			return nil, fmt.Errorf("failed to open image file: %w", err)
 		}
-	}
-	if fileHeader == nil {
-		return "", "", nil
+
+		fileBytes, err := io.ReadAll(file)
+		_ = file.Close()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read image file: %w", err)
+		}
+
+		mimeType := fileHeader.Header.Get("Content-Type")
+		if mimeType == "" || mimeType == "application/octet-stream" {
+			mimeType = http.DetectContentType(fileBytes)
+		}
+		if !strings.HasPrefix(mimeType, "image/") {
+			mimeType = "image/png"
+		}
+
+		parts = append(parts, dto.GeminiPart{
+			InlineData: &dto.GeminiInlineData{
+				MimeType: mimeType,
+				Data:     base64.StdEncoding.EncodeToString(fileBytes),
+			},
+		})
 	}
 
-	file, err := fileHeader.Open()
-	if err != nil {
-		return "", "", fmt.Errorf("failed to open image file: %w", err)
-	}
-	defer file.Close()
-
-	fileBytes, err := io.ReadAll(file)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to read image file: %w", err)
-	}
-
-	mimeType := fileHeader.Header.Get("Content-Type")
-	if mimeType == "" || mimeType == "application/octet-stream" {
-		mimeType = http.DetectContentType(fileBytes)
-	}
-
-	base64Data := ""
-	if strings.HasPrefix(mimeType, "image/") {
-		base64Data = "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(fileBytes)
-	} else {
-		base64Data = "data:image/png;base64," + base64.StdEncoding.EncodeToString(fileBytes)
-		mimeType = "image/png"
-	}
-
-	return base64Data, mimeType, nil
+	return parts, nil
 }
 
-func rawImageDataFromJSON(raw json.RawMessage) (string, string, error) {
+func rawImagePartsFromJSON(raw json.RawMessage) ([]dto.GeminiPart, error) {
 	if len(raw) == 0 {
-		return "", "", nil
+		return nil, nil
 	}
 
 	var encoded string
-	if err := common.Unmarshal(raw, &encoded); err != nil {
-		return "", "", fmt.Errorf("invalid image payload: %w", err)
+	if err := common.Unmarshal(raw, &encoded); err == nil {
+		return geminiImagePartFromEncodedString(encoded)
 	}
+
+	var encodedList []string
+	if err := common.Unmarshal(raw, &encodedList); err != nil {
+		return nil, fmt.Errorf("invalid image payload: %w", err)
+	}
+	parts := make([]dto.GeminiPart, 0, len(encodedList))
+	for _, encoded := range encodedList {
+		imageParts, err := geminiImagePartFromEncodedString(encoded)
+		if err != nil {
+			return nil, err
+		}
+		parts = append(parts, imageParts...)
+	}
+	return parts, nil
+}
+
+func geminiImagePartFromEncodedString(encoded string) ([]dto.GeminiPart, error) {
 	encoded = strings.TrimSpace(encoded)
 	if encoded == "" {
-		return "", "", nil
+		return nil, nil
 	}
 
 	mimeType, cleanBase64, err := service.DecodeBase64FileData(encoded)
 	if err != nil {
-		return "", "", err
+		return nil, err
 	}
-	return "data:" + mimeType + ";base64," + cleanBase64, mimeType, nil
+	return []dto.GeminiPart{
+		{
+			InlineData: &dto.GeminiInlineData{
+				MimeType: mimeType,
+				Data:     cleanBase64,
+			},
+		},
+	}, nil
 }
 
 type geminiImageConfig struct {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -84,6 +85,136 @@ func TestGeminiAdaptorConvertsJsonEditImageToInlineData(t *testing.T) {
 	require.Equal(t, "edit this image", req.Contents[0].Parts[0].Text)
 	require.NotNil(t, req.Contents[0].Parts[1].InlineData)
 	require.Equal(t, "image/png", req.Contents[0].Parts[1].InlineData.MimeType)
+}
+
+func TestGeminiAdaptorConvertsMultipartEditImageToInlineData(t *testing.T) {
+	t.Parallel()
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	require.NoError(t, writer.WriteField("model", "gemini-2.5-flash-image"))
+	require.NoError(t, writer.WriteField("prompt", "turn the center into a gold star"))
+	require.NoError(t, writer.WriteField("n", "1"))
+	require.NoError(t, writer.WriteField("size", "1024x1024"))
+	imagePart, err := writer.CreateFormFile("image", "input.png")
+	require.NoError(t, err)
+	_, err = imagePart.Write([]byte{
+		0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+		0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+	})
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	adaptor := &Adaptor{}
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/edits", &body)
+	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+
+	got, err := adaptor.convertGeminiImagePreviewRequest(c, &relaycommon.RelayInfo{
+		RelayMode: relayconstant.RelayModeImagesEdits,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelType:       constant.ChannelTypeGemini,
+			UpstreamModelName: "gemini-2.5-flash-image",
+		},
+	}, dto.ImageRequest{
+		Model:  "gemini-2.5-flash-image",
+		Prompt: "turn the center into a gold star",
+		N:      common.GetPointer(uint(1)),
+		Size:   "1024x1024",
+	})
+	require.NoError(t, err)
+
+	req, ok := got.(*dto.GeminiChatRequest)
+	require.True(t, ok)
+	require.Len(t, req.Contents, 1)
+	require.Len(t, req.Contents[0].Parts, 2)
+	require.Equal(t, "turn the center into a gold star", req.Contents[0].Parts[0].Text)
+	require.NotNil(t, req.Contents[0].Parts[1].InlineData)
+	require.Equal(t, "image/png", req.Contents[0].Parts[1].InlineData.MimeType)
+	require.NotEmpty(t, req.Contents[0].Parts[1].InlineData.Data)
+}
+
+func TestGeminiAdaptorConvertsMultipartEditImagesAndMaskToInlineData(t *testing.T) {
+	t.Parallel()
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	require.NoError(t, writer.WriteField("model", "gemini-2.5-flash-image"))
+	require.NoError(t, writer.WriteField("prompt", "combine these images and use the mask"))
+	for _, fileName := range []string{"input.png", "input2.png"} {
+		imagePart, err := writer.CreateFormFile("image", fileName)
+		require.NoError(t, err)
+		_, err = imagePart.Write([]byte{
+			0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+			0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+		})
+		require.NoError(t, err)
+	}
+	maskPart, err := writer.CreateFormFile("mask", "mask.png")
+	require.NoError(t, err)
+	_, err = maskPart.Write([]byte{
+		0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+		0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+	})
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	adaptor := &Adaptor{}
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/edits", &body)
+	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+
+	got, err := adaptor.convertGeminiImagePreviewRequest(c, &relaycommon.RelayInfo{
+		RelayMode: relayconstant.RelayModeImagesEdits,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelType:       constant.ChannelTypeGemini,
+			UpstreamModelName: "gemini-2.5-flash-image",
+		},
+	}, dto.ImageRequest{
+		Model:  "gemini-2.5-flash-image",
+		Prompt: "combine these images and use the mask",
+	})
+	require.NoError(t, err)
+
+	req, ok := got.(*dto.GeminiChatRequest)
+	require.True(t, ok)
+	require.Len(t, req.Contents, 1)
+	require.Len(t, req.Contents[0].Parts, 5)
+	require.Equal(t, "combine these images and use the mask", req.Contents[0].Parts[0].Text)
+	require.NotNil(t, req.Contents[0].Parts[1].InlineData)
+	require.NotNil(t, req.Contents[0].Parts[2].InlineData)
+	require.Equal(t, "Use the next image as the edit mask.", req.Contents[0].Parts[3].Text)
+	require.NotNil(t, req.Contents[0].Parts[4].InlineData)
+}
+
+func TestGeminiAdaptorConvertsJsonEditImagesArrayToInlineData(t *testing.T) {
+	t.Parallel()
+
+	adaptor := &Adaptor{}
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/edits", nil)
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	got, err := adaptor.convertGeminiImagePreviewRequest(c, &relaycommon.RelayInfo{
+		RelayMode: relayconstant.RelayModeImagesEdits,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelType:       constant.ChannelTypeGemini,
+			UpstreamModelName: "gemini-2.5-flash-image",
+		},
+	}, dto.ImageRequest{
+		Model:  "gemini-2.5-flash-image",
+		Prompt: "combine these images",
+		Images: json.RawMessage(`["data:image/png;base64,aGVsbG8=","data:image/png;base64,d29ybGQ="]`),
+	})
+	require.NoError(t, err)
+
+	req, ok := got.(*dto.GeminiChatRequest)
+	require.True(t, ok)
+	require.Len(t, req.Contents, 1)
+	require.Len(t, req.Contents[0].Parts, 3)
+	require.Equal(t, "combine these images", req.Contents[0].Parts[0].Text)
+	require.NotNil(t, req.Contents[0].Parts[1].InlineData)
+	require.NotNil(t, req.Contents[0].Parts[2].InlineData)
 }
 
 func TestGeminiAdaptorDoResponseRoutesImagePreviewToChatImageHandler(t *testing.T) {
