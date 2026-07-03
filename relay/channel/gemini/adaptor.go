@@ -304,6 +304,10 @@ func geminiImagePartFromEncodedString(encoded string) ([]dto.GeminiPart, error) 
 		return nil, nil
 	}
 
+	if strings.HasPrefix(encoded, "http://") || strings.HasPrefix(encoded, "https://") {
+		return downloadGeminiImageParts(encoded)
+	}
+
 	mimeType, cleanBase64, err := service.DecodeBase64FileData(encoded)
 	if err != nil {
 		return nil, err
@@ -313,6 +317,44 @@ func geminiImagePartFromEncodedString(encoded string) ([]dto.GeminiPart, error) 
 			InlineData: &dto.GeminiInlineData{
 				MimeType: mimeType,
 				Data:     cleanBase64,
+			},
+		},
+	}, nil
+}
+
+func downloadGeminiImageParts(imageURL string) ([]dto.GeminiPart, error) {
+	client := service.GetHttpClient()
+	if client == nil {
+		client = http.DefaultClient
+	}
+	resp, err := client.Get(imageURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to download image from url: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to download image from url: status %d", resp.StatusCode)
+	}
+
+	imageBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read image from url: %w", err)
+	}
+	if len(imageBytes) == 0 {
+		return nil, errors.New("no image data found in the url response")
+	}
+
+	mimeType := http.DetectContentType(imageBytes)
+	if !strings.HasPrefix(mimeType, "image/") {
+		mimeType = "image/png"
+	}
+
+	return []dto.GeminiPart{
+		{
+			InlineData: &dto.GeminiInlineData{
+				MimeType: mimeType,
+				Data:     base64.StdEncoding.EncodeToString(imageBytes),
 			},
 		},
 	}, nil
