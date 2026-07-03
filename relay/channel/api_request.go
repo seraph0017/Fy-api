@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptrace"
 	"regexp"
 	"strings"
 	"sync"
@@ -501,6 +502,19 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 		client = service.CloneHttpClientWithTimeout(client, info.TimeoutMultiplier)
 	}
 
+	// Fy-api overlay: image-edit-timeout-3x — trace write/response timing
+	var wroteAt, firstByteAt time.Time
+	trace := &httptrace.ClientTrace{
+		WroteRequest: func(_ httptrace.WroteRequestInfo) {
+			wroteAt = time.Now()
+		},
+		GotFirstResponseByte: func() {
+			firstByteAt = time.Now()
+		},
+	}
+	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
+	startAt := time.Now()
+
 	var stopPinger context.CancelFunc
 	if info.IsStream {
 		helper.SetEventStreamHeaders(c)
@@ -520,6 +534,22 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	}
 
 	resp, err := client.Do(req)
+
+	// Fy-api overlay: image-edit-timeout-3x — log request send/wait timing
+	if info.TimeoutMultiplier > 0 {
+		var wroteDur, firstByteDur string
+		if !wroteAt.IsZero() {
+			wroteDur = wroteAt.Sub(startAt).Truncate(time.Millisecond).String()
+		} else {
+			wroteDur = "-"
+		}
+		if !firstByteAt.IsZero() {
+			firstByteDur = firstByteAt.Sub(startAt).Truncate(time.Millisecond).String()
+		} else {
+			firstByteDur = "-"
+		}
+		logger.LogDebug(c, "upstream timing: wroteRequest=%s firstByte=%s timeout=%ds", wroteDur, firstByteDur, common2.RelayTimeout*info.TimeoutMultiplier)
+	}
 	if err != nil {
 		logger.LogError(c, "do request failed: "+err.Error())
 		return nil, types.NewError(err, types.ErrorCodeDoRequestFailed, types.ErrOptionWithHideErrMsg("upstream error: do request failed"))
