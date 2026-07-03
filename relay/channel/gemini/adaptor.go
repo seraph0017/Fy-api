@@ -418,6 +418,10 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 
 func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *relaycommon.RelayInfo) error {
 	channel.SetupApiRequestHeader(info, c, req)
+	if isGeminiImagePreviewModel(info.UpstreamModelName) &&
+		(info.RelayMode == relayconstant.RelayModeImagesGenerations || info.RelayMode == relayconstant.RelayModeImagesEdits) {
+		req.Set("Content-Type", "application/json")
+	}
 	req.Set("x-goog-api-key", info.ApiKey)
 	return nil
 }

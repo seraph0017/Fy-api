@@ -134,6 +134,39 @@ func TestGeminiAdaptorConvertsMultipartEditImageToInlineData(t *testing.T) {
 	require.NotEmpty(t, req.Contents[0].Parts[1].InlineData.Data)
 }
 
+func TestGeminiAdaptorSetsJSONContentTypeForMultipartImagePreviewEdit(t *testing.T) {
+	t.Parallel()
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	require.NoError(t, writer.WriteField("model", "gemini-2.5-flash-image"))
+	require.NoError(t, writer.WriteField("prompt", "turn the center into a gold star"))
+	imagePart, err := writer.CreateFormFile("image", "input.png")
+	require.NoError(t, err)
+	_, err = imagePart.Write([]byte{
+		0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+		0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+	})
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	adaptor := &Adaptor{}
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/edits", &body)
+	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+
+	headers := http.Header{}
+	err = adaptor.SetupRequestHeader(c, &headers, &relaycommon.RelayInfo{
+		RelayMode: relayconstant.RelayModeImagesEdits,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			UpstreamModelName: "gemini-2.5-flash-image",
+			ApiKey:            "test-key",
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "application/json", headers.Get("Content-Type"))
+}
+
 func TestGeminiAdaptorConvertsMultipartEditImagesAndMaskToInlineData(t *testing.T) {
 	t.Parallel()
 
