@@ -60,6 +60,7 @@ func InitEnv() {
 	} else {
 		CryptoSecret = SessionSecret
 	}
+	SessionCookieDomain = strings.TrimSpace(os.Getenv("SESSION_COOKIE_DOMAIN"))
 	if os.Getenv("SQLITE_PATH") != "" {
 		SQLitePath = os.Getenv("SQLITE_PATH")
 	}
