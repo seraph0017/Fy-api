@@ -82,6 +82,14 @@
 - **冲突风险**：低（仅修改运维脚本，不影响业务代码）
 - **Merge 策略**：若 upstream 后续也开始管理 nginx 主配置，保留本条“提升连接上限”的语义即可，具体数值按线上压测结果再定。
 
+### B-6.2 [session] 可配置共享 Cookie 域
+- **修改文件**：`common/constants.go`、`common/init.go`、`common/session.go`、`main.go`、`config/fy-api.env.example`
+- **新增测试**：`common/session_test.go::TestSessionOptionsCookieDomain`
+- **背景**：HK 生产同时保留 `api.aitracenex.com` 和 `www.aitracenex.com` 入口。浏览器默认 host-only session cookie 导致用户在一个子域登录后跳到另一个子域时看起来像“自动退出”。
+- **行为**：新增 `SESSION_COOKIE_DOMAIN` 环境变量；默认空值保持 upstream host-only 行为。生产可设置为 `.aitracenex.com`，让 `api` / `www` 子域共享同一份 session cookie，迁移期内两个入口都可继续访问；已登录老用户访问原域名时会重新签发共享域 cookie，降低切到主域时掉登录的概率。
+- **冲突风险**：低（`main.go` session options 小范围抽函数；默认行为不变）
+- **Merge 策略**：若 upstream 后续支持 session cookie domain，优先采用 upstream 配置名；保留空值 host-only、显式 `.aitracenex.com` 共享的语义。
+
 ### B-7 [benchmark] 渠道基准测试工具链（channel-benchmark）
 - **新增目录**：`scripts/channel-benchmark/`
   - `README.md` —— 顶层导航，解释 Go / Python 两套工具的分工

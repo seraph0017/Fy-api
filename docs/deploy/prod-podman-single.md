@@ -361,6 +361,8 @@ REDIS_CONN_STRING=redis://:REPLACE_ME_REDIS_PASS@r-xxx.redis.rds.aliyuncs.com:63
 # openssl rand -hex 32  生成
 SESSION_SECRET=REPLACE_ME_64_HEX_CHARS
 CRYPTO_SECRET=REPLACE_ME_64_HEX_CHARS
+# 多子域名共享登录态时设置，例如 .aitracenex.com；单域名部署留空。
+SESSION_COOKIE_DOMAIN=
 
 # ==== 性能(16c32g ECS 对应值)====
 GOMAXPROCS=12
@@ -1196,4 +1198,3 @@ chmod +x /opt/fy-api/scripts/start-blue.sh
 4. **迁 SAE / ACK**:规模 > 500 RPS 持续 2 周 + SLA 99.9%+ 要求
 
 具体触发条件见 §十五。
-
