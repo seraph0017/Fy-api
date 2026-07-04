@@ -1,6 +1,6 @@
 # TraceNex 定制清单（OVERLAY.md）
 
-> 最后更新：2026-07-03（image-edit-timeout-3x）
+> 最后更新：2026-07-04（hk-socks5-proxy-runbook）
 > 维护人：<你的名字>
 > 上游基线：new-api @ `9bc1a53d` (2026-06-15)
 >
@@ -81,6 +81,13 @@
 - **行为**：在写站点配置前，脚本会把主配置中的 `worker_connections` 提升到 `8192`，并补上 `worker_rlimit_nofile 65535`，避免新机或重装后回落到过低默认值。
 - **冲突风险**：低（仅修改运维脚本，不影响业务代码）
 - **Merge 策略**：若 upstream 后续也开始管理 nginx 主配置，保留本条“提升连接上限”的语义即可，具体数值按线上压测结果再定。
+
+### B-6.2 [ops/proxy] HK SOCKS5 代理服务操作手册
+- **新增文件**：`docs/操作手册-HK-SOCKS5代理服务.md`
+- **内容**：记录 HK 生产渠道当前使用的 SG SOCKS5 代理入口 `47.236.133.70:11080`、`hk-test/sg-test` 上 GOST 代理服务的 systemd/config/UFW 配置、安装步骤、开机自启检查、云安全组注意事项，以及 Fy-api 渠道 `proxy` 字段的配置方式。
+- **背景**：HK 生产的 Google/Gemini 与 AWS/Claude 官方渠道需要通过 SG SOCKS5 出站。`proxy` 字段是单 URL 字符串，不支持在一个渠道中填写多个代理节点；多节点容灾应通过多渠道或 L4 负载均衡实现。
+- **冲突风险**：极低（新增运维文档，不改业务代码）
+- **Merge 策略**：保留文档；如果后续代理入口、端口或安全组策略变化，同步更新本文档。
 
 ### B-7 [benchmark] 渠道基准测试工具链（channel-benchmark）
 - **新增目录**：`scripts/channel-benchmark/`
