@@ -11,8 +11,8 @@ Use this for Fy-api/TraceNex urgent fixes that should be releasable from `main` 
 
 - Do not merge directly into `main`, `master`, or `develop`; all integration goes through PRs.
 - Treat this repo's production branch as `main` unless the user explicitly names another existing branch.
-- Release targets are branch-bound: `main` may release to production targets `cn` / `sg`; `develop` may release only to test targets `cn-test` / `sg-test`.
-- Never release `develop` or any non-`main` branch to `cn` / `sg` unless the user gives an explicit second confirmation for that exact command.
+- Release targets are branch-bound: `main` may release to production targets `cn` / `hk`; `develop` may release only to test targets `cn-test` / `hk-test`.
+- Never release `develop` or any non-`main` branch to `cn` / `hk` unless the user gives an explicit second confirmation for that exact command.
 - Before any `fab release`, state and verify the exact `--target`, `--tag`, and `--ref` command; do not infer a production target from "release develop".
 - Preserve unrelated user changes. If the hotfix was created on `develop`, stash or patch it before switching to `origin/main`.
 - The `develop` PR must be a cherry-pick of the production hotfix commit, not a separate reimplementation.
@@ -42,8 +42,8 @@ Use this for Fy-api/TraceNex urgent fixes that should be releasable from `main` 
 
 ## Release Mapping
 
-- Production: `fab release --target=cn|sg --ref=origin/main ...`
-- Test: `fab release --target=cn-test|sg-test --ref=origin/develop ...`
+- Production: `fab release --target=cn|hk --ref=origin/main ...`
+- Test: `fab release --target=cn-test|hk-test --ref=origin/develop ...`
 
 ## Verification
 

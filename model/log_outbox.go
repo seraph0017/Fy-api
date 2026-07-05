@@ -21,11 +21,11 @@ import (
 	"gorm.io/gorm"
 )
 
-// dataRegion 当前从环境变量读，CN/SG ECS 启动时分别注入 cn / sg。
-// 默认 cn（保守起见，给非 SG 部署兜底）。
+// dataRegion 当前从环境变量读，CN/HK ECS 启动时分别注入 cn / hk。
+// 默认 cn（保守起见，给非 HK 部署兜底）。
 func dataRegion() string {
 	r := common.GetEnvOrDefaultString("DATA_REGION", "cn")
-	if r != "sg" && r != "cn" {
+	if r != "hk" && r != "cn" {
 		return "cn"
 	}
 	return r

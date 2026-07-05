@@ -43,6 +43,9 @@ data/
 # Fy-api overlay: local podman test artifacts
 compose.test.yml
 
+# Fy-api overlay: local video pipeline rollout config
+config/video-pipeline.yaml
+
 token_estimator_test.go
 .test
 skills-lock.json

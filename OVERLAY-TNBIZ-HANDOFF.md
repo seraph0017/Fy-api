@@ -125,7 +125,7 @@ Poller：10s ticker（落在 §14.1 推荐的 5-15s 区间），ctx-cancel 即�
 - **nonce 重放**：`SetNX(ctx, "tnbiz:nonce:"+nonce, "1", 24h)` go-redis/v8 ctx-first；redis 不可用时 fail-closed 拒绝。
 - **clock skew**：±5min 硬约束（`hmacClockSkew` 常量）。
 - **endpoint allowlist**：case-sensitive 精确匹配（防前缀绕过）。
-- **region 隔离**：`ConsumeLogOutbox.DataRegion` 来自 `DATA_REGION` 环境变量（cn / sg），`(data_region, status)` 联合索引强制 publisher 按 region 拉取；CN 事件不会被 SG publisher 拉走。
+- **region 隔离**：`ConsumeLogOutbox.DataRegion` 来自 `DATA_REGION` 环境变量（cn / hk），`(data_region, status)` 联合索引强制 publisher 按 region 拉取；CN 事件不会被 HK publisher 拉走。
 - **idempotency 冲突**：同 (auth_kid, idem_key, endpoint) 但 body 不同 → 409 Conflict。
 
 ## 7. 不变性 / 范围切出

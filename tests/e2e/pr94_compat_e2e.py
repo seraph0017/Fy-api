@@ -50,10 +50,10 @@ class TargetDefaults:
 
 
 TARGET_DEFAULTS: dict[str, TargetDefaults] = {
-    "sg-test": TargetDefaults(
-        target_env="sg-test",
+    "hk-test": TargetDefaults(
+        target_env="hk-test",
         base_url="https://api-test.aitracenex.com",
-        ssh_target="root@8.222.175.17",
+        ssh_target="root@47.86.175.72 -p 58422",
     ),
     "cn-test": TargetDefaults(
         target_env="cn-test",
@@ -424,7 +424,7 @@ def main() -> int:
     parser.add_argument("--claude-model", default="")
     parser.add_argument("--bedrock-channel-id", type=int, default=None)
     parser.add_argument("--claude-channel-id", type=int, default=None)
-    parser.add_argument("--target-env", choices=sorted(TARGET_DEFAULTS.keys()), default="sg-test")
+    parser.add_argument("--target-env", choices=sorted(TARGET_DEFAULTS.keys()), default="hk-test")
     parser.add_argument("--timeout", type=int, default=int(env("FYAPI_E2E_TIMEOUT", "90")))
     parser.add_argument("--only", choices=["all", "bedrock", "claude"], default="all")
     parser.add_argument("--dry-run", action="store_true")

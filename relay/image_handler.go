@@ -42,6 +42,14 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 	if adaptor == nil {
 		return types.NewError(fmt.Errorf("invalid api type: %d", info.ApiType), types.ErrorCodeInvalidApiType, types.ErrOptionWithSkipRetry())
 	}
+
+	// Fy-api overlay: image-edit-timeout-3x — /v1/images/edits can take much
+	// longer than other endpoints; multiply the global RELAY_TIMEOUT to avoid
+	// premature client-side disconnects.
+	if strings.HasSuffix(c.Request.URL.Path, "/edits") {
+		info.TimeoutMultiplier = 3
+	}
+
 	adaptor.Init(info)
 
 	var requestBody io.Reader

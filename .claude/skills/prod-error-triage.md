@@ -5,28 +5,28 @@ description: Use when investigating production errors, doing daily error review,
 
 # Production Error Triage
 
-Investigate and summarize production errors across cn and sg environments. Outputs a layered markdown report: summary table first, then drill-down on request.
+Investigate and summarize production errors across cn and hk environments. Outputs a layered markdown report: summary table first, then drill-down on request.
 
 ## Environments
 
 | Target | Base URL | Notes |
 |--------|----------|-------|
 | cn | `https://api.tracenex.cn` | Hangzhou production |
-| sg | `https://api.aitracenex.com` | Singapore production |
+| hk | `https://api.aitracenex.com` | Hong Kong production |
 
 ## Data Sources
 
 1. **Primary**: Admin API `GET /api/log/` with `type=5` (error logs)
-2. **Secondary**: Container logs via SSH (`fab logs --target=cn/sg`)
+2. **Secondary**: Container logs via SSH (`fab logs --target=cn/hk`)
 
 ## Execution Flow
 
 ```dot
 digraph triage {
   "Determine time range" -> "Fetch error logs (cn)";
-  "Determine time range" -> "Fetch error logs (sg)";
+  "Determine time range" -> "Fetch error logs (hk)";
   "Fetch error logs (cn)" -> "Normalize & group errors";
-  "Fetch error logs (sg)" -> "Normalize & group errors";
+  "Fetch error logs (hk)" -> "Normalize & group errors";
   "Normalize & group errors" -> "Calculate stats";
   "Calculate stats" -> "Correlate with PRs";
   "Correlate with PRs" -> "Output summary table";
@@ -54,9 +54,9 @@ END_TS=$(date +%s)
 curl -s "https://api.tracenex.cn/api/log/?type=5&start_timestamp=${START_TS}&end_timestamp=${END_TS}&p=0&page_size=100" \
   -H "Authorization: Bearer ${ADMIN_TOKEN_CN}"
 
-# SG environment
+# HK environment
 curl -s "https://api.aitracenex.com/api/log/?type=5&start_timestamp=${START_TS}&end_timestamp=${END_TS}&p=0&page_size=100" \
-  -H "Authorization: Bearer ${ADMIN_TOKEN_SG}"
+  -H "Authorization: Bearer ${ADMIN_TOKEN_HK}"
 ```
 
 Response shape: `{ "data": { "items": [...], "total": N, "page": P } }`
@@ -70,7 +70,7 @@ Each log item fields: `id`, `created_at` (unix ts), `content` (error message),
 **Fallback (API unavailable)**: SSH via fabric to grep container logs:
 ```bash
 fab logs --target=cn --tail=2000 2>/dev/null | grep -i "error\|panic\|fatal"
-fab logs --target=sg --tail=2000 2>/dev/null | grep -i "error\|panic\|fatal"
+fab logs --target=hk --tail=2000 2>/dev/null | grep -i "error\|panic\|fatal"
 ```
 
 ## Step 2: Normalize & Group Errors
@@ -140,7 +140,7 @@ Match PR titles/commits against error group keywords. Mark as "关联 PR" if fou
 |---|---------|----------|------|--------|---------|------|------|---------|
 | 1 | {pattern} | {model}/{ch} | N | X% | Nh前 | ↑/↓/→ | 🔴/🟡/🟢 | #N/- |
 
-### SG 环境 (总请求: X, 总错误: Y, 整体错误率: Z%)
+### HK 环境 (总请求: X, 总错误: Y, 整体错误率: Z%)
 
 | # | 错误模式 | 模型/渠道 | 次数 | 错误率 | 最后出现 | 趋势 | 状态 | 关联 PR |
 |---|---------|----------|------|--------|---------|------|------|---------|
@@ -174,7 +174,7 @@ When user asks to drill into a specific error group:
 
 The skill needs admin API tokens. Check these locations:
 
-1. Environment variables: `TRACENEX_ADMIN_TOKEN_CN`, `TRACENEX_ADMIN_TOKEN_SG`
+1. Environment variables: `TRACENEX_ADMIN_TOKEN_CN`, `TRACENEX_ADMIN_TOKEN_HK`
 2. If not set, prompt user to provide tokens
 3. SSH access uses existing fabfile.py configuration (keys in ~/.ssh/)
 
@@ -196,5 +196,5 @@ The skill needs admin API tokens. Check these locations:
 - Focus on 🔴 active errors first
 - Errors with high affected_users count are higher priority
 - If error rate suddenly spikes, check if a recent deploy caused it
-- Cross-reference cn vs sg: same error in both = upstream issue; only one = infra issue
+- Cross-reference cn vs hk: same error in both = upstream issue; only one = infra issue
 

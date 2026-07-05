@@ -187,14 +187,11 @@ func main() {
 	middleware.SetUpLogger(server)
 	// Initialize session store
 	store := cookie.NewStore([]byte(common.SessionSecret))
-	store.Options(sessions.Options{
-		Path:     "/",
-		MaxAge:   2592000, // 30 days
-		HttpOnly: true,
-		Secure:   false,
-		SameSite: http.SameSiteStrictMode,
-	})
+	store.Options(common.SessionOptions())
 	server.Use(sessions.Sessions("session", store))
+	if common.SessionCookieDomain != "" {
+		server.Use(reissueSharedSessionCookie())
+	}
 
 	InjectUmamiAnalytics()
 	InjectGoogleAnalytics()
@@ -217,6 +214,19 @@ func main() {
 	err = server.Run(":" + port)
 	if err != nil {
 		common.FatalLog("failed to start HTTP server: " + err.Error())
+	}
+}
+
+func reissueSharedSessionCookie() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		session := sessions.Default(c)
+		if session.Get("id") != nil {
+			// Fy-api overlay: migrate legacy host-only cookies to SESSION_COOKIE_DOMAIN.
+			if err := session.Save(); err != nil {
+				common.SysError("failed to reissue shared session cookie: " + err.Error())
+			}
+		}
+		c.Next()
 	}
 }
 
