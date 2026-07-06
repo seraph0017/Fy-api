@@ -227,4 +227,3 @@ class BenchmarkConfig:
     @property
     def channel_name(self) -> str:
         return self.target.channel_name or f"channel-{self.target.channel_id}"
-

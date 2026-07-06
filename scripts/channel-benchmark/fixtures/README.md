@@ -38,4 +38,3 @@ the existing video fixture and prints a warning.
 
 Fixtures should stay tiny. Do not commit customer data, real people, secrets,
 or provider-generated outputs here.
-
