@@ -92,14 +92,13 @@
 
 ### B-7 [benchmark] 渠道基准测试工具链（channel-benchmark）
 - **新增目录**：`scripts/channel-benchmark/`
-  - `README.md` —— 顶层导航，解释 Go / Python 两套工具的分工
-  - `go/` —— 零依赖 Go 烟测器（single binary）
-    - `main.go` / `runner.go` / `client.go` / `admin.go` / `config.go` / `metrics.go` / `exporter.go`
-    - `prometheus.go` —— 自写零依赖 exposition 格式导出器（`-prom-listen :9090` 进 daemon 模式）
-    - `prometheus_test.go` / `e2e_test.go` / `testhelper_test.go` —— 全部 `-race` 通过
-    - `channel-benchmark.yaml` —— 示例配置（`${VAR}` / `${VAR:-default}` 注入环境变量）
-    - `go.mod` 只依赖 `gopkg.in/yaml.v3`
-  - `py/` —— 三件套 Python 工具（共享一个 venv / 一个 JSONL schema）
+  - `README.md` —— 顶层导航，解释 `fy-benchmark` 单入口、目录结构和输出结构
+  - `RUNBOOK-channel-benchmark.md` —— 完整渠道/模型测试执行手册，默认只暴露 `benchmark.yaml` + `fy-benchmark`
+  - `install-env.sh` —— 一键创建 Python venv、安装 benchmark CLIs、按需安装 heavy extras，并重新生成本地 deterministic fixtures
+  - `py/` —— Python 工具链（共享一个 venv / 一个 JSONL schema）
+    - `benchmark.yaml` —— 用户入口配置模板；复制成 `benchmark.local.yaml` 后只填 `base_url` / token / `channel_id` / model list / mode
+    - `fy_benchmark/` —— 统一编排器（注册 `fy-benchmark`）：读取单配置、按模型严格串行、自动生成底层 YAML、记录模块耗时日志、调用 `fy-score` 输出 `scorecard`
+    - `fy_smoke/` —— 基础烟测 + Prometheus exporter（admin 渠道查询、stream/non-stream、E2E/TTFT/ITL/usage、JSON/CSV、`--long-thinking`）
     - `fy_loadtest/` —— 并发阶梯压测（E2E/TTFT/ITL/TPOT 分位、RPS、goodput）
     - `fy_image_loadtest/` —— 图片生成持续压测（固定每渠道 worker 数、打 `/v1/images/generations`、支持多渠道同时 pin 到指定 channel id，持续跑到 Ctrl+C）
     - `fy_quality/` —— 质量评分（7 种 grader + 双裁判 rubric + 磁盘缓存）
@@ -113,17 +112,22 @@
     - `fy_image_canary/` —— 图片金丝雀真实性检测（5A vendor 对比 + 5B 指纹/跨渠道/能力边界）
     - `fy_score/` —— 统一评分器（五维度加权，文本/图片不同权重，产出 scorecard）
     - `fy_poc_loadtest/` —— 按 `bugs/POC压测方法.docx` / `bugs/报告模板.docx` 口径输出客户 POC 压测报告（三场景：23/1k/7k tokens；并发 1/10/20/30/40/50/64/80/128/256；指标 TTFT/Latency/TPOT/tokens/s/成功率）
+    - `benchmark-runs/` —— 默认运行输出目录；每次运行生成 `manifest.json` / `run-summary.*` / 自动生成的 `configs/` / 模块 `logs/` / `reports/scorecard.*`
+    - `fixtures` extra —— fixture 生成脚本所需的轻量 Pillow 依赖；text MMD、image canary、tiktoken 仍保持 opt-in extras
+    - `fixtures/` —— 协议/参数兼容测试用的可提交小素材（图片编辑 source/mask、图片/视频参考图、短音频、短视频），全部本地生成，不含客户数据或 provider 输出
+    - `unified-benchmark-runner-plan.md` —— 统一 `fy-benchmark` 编排器长期规划：CLI/YAML 分工、CN/HK 路由、协议/参数兼容矩阵、strict 模式、fixture/manifest/resume/compare 设计
     - `seedance_gateway_vs_volcengine.py` —— Seedance 2.0 网关 vs 火山直连对照脚本，用于排查上游内容安全和网关转换差异
     - `tests/` + `tests_quality/` + `tests_canary/` + `tests_image_canary/` —— 102 个 e2e 测试
   - `docs/seedance-real-person-video-support-plan.md` —— 基于 DJLine 可信素材链路整理的 SD2.0 真人视频支持方案
 - **用途**：
-  1. **烟测**（Go）—— 生产机上零依赖跑一遍所有渠道，看 TTFT / 存活 / usage 是否正常
-  2. **压测**（fy-loadtest）—— 灰度上线前验证单渠道在 N 并发下的分位延迟
-  3. **质量**（fy-quality）—— 新渠道接入前用金标 JSONL + 双裁判评分
-  4. **反替换**（fy-canary）—— 先对可信上游 vendor 直连录 baseline，再周期性审计网关下游是否被静默换模型
-  5. **监控接入**（Go Prometheus mode）—— `go run . -prom-listen :9090 -prom-interval 5m` 常驻，给 Grafana 暴露 `channel_benchmark_ttft_seconds` / `_request_total{outcome=...}` / `_run_age_seconds` 等序列
+  1. **完整渠道验收**（fy-benchmark）—— `fy-benchmark -c benchmark.local.yaml` 串行执行 smoke / conformance / integrity / loadtest / quality / canary / image 模块，并生成 `run-summary.md` + `reports/scorecard.md`
+  2. **烟测/监控**（fy-smoke）—— 快速看 TTFT / 存活 / usage，并可用 `--prom-listen` 暴露 Prometheus metrics
+  3. **压测**（fy-loadtest / fy-image-loadtest）—— 灰度上线前验证单渠道在 N 并发下的分位延迟、吞吐和错误分布
+  4. **质量**（fy-quality）—— 默认 deterministic graders；需要主观/语义覆盖时显式启用 judge / embedding
+  5. **反替换**（fy-canary / fy-image-canary）—— 有可信 baseline channel 时录 baseline，再审计目标渠道是否静默换模型
+  6. **监控接入**（fy-smoke Prometheus mode）—— `fy-smoke -c smoke.yaml --prom-listen :9090 --prom-interval 5m` 常驻，给 Grafana 暴露 `channel_benchmark_ttft_seconds` / `_request_total{outcome=...}` / `_run_age_seconds` 等序列
 - **冲突风险**：极低（完整独立子目录，不触碰 upstream 业务代码或构建链）
-- **Merge 策略**：整个子树随上游同步走；唯一需要人工 review 的是 Go 那边的 `go.mod` 模块路径（`github.com/seraph0017/Fy-api/scripts/channel-benchmark`），不要跟主仓的 Go 模块搞混
+- **Merge 策略**：整个子树随上游同步走；保持独立工具链，不触碰主仓业务代码
 
 ### B-8 [gemini] 原生 pass-through 入口保留客户端 API 版本
 - **修改文件**：`relay/channel/gemini/adaptor.go`（`GetRequestURL`，紧接 `GetGeminiVersionSetting` 调用之后追加分支）
