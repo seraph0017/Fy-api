@@ -1,8 +1,8 @@
 # TraceNex 定制清单（OVERLAY.md）
 
-> 最后更新：2026-07-05（刷新 upstream sync PR，合并最新 develop）
+> 最后更新：2026-07-06（刷新 upstream sync PR 到 1e80ce03）
 > 维护人：<你的名字>
-> 上游基线：new-api @ `52858ad1` (2026-07-01)
+> 上游基线：new-api @ `1e80ce03` (2026-07-06)
 >
 > **重要：上游 v1.0（commit `a42b39760`，2026-04-28）把整个老前端搬到了 `web/classic/`，并行新建了 `web/default/`（React 19 + TypeScript + Rsbuild + Base UI + Tailwind）。TraceNex 选择路径 A：所有前端 overlay 跟随 `web/classic/` 路径，runtime theme 锁死在 `"classic"`，不允许切到 default。详见 `docs/上游v1.0前端重写炸弹-影响分析与对策.md`。**
 
@@ -87,7 +87,7 @@
 - **修改文件**：`common/constants.go`、`common/init.go`、`common/session.go`、`main.go`、`config/fy-api.env.example`
 - **新增测试**：`common/session_test.go::TestSessionOptionsCookieDomain`
 - **背景**：HK 生产同时保留 `api.aitracenex.com` 和 `www.aitracenex.com` 入口。浏览器默认 host-only session cookie 导致用户在一个子域登录后跳到另一个子域时看起来像“自动退出”。
-- **行为**：新增 `SESSION_COOKIE_DOMAIN` 环境变量；默认空值保持 upstream host-only 行为。生产可设置为 `.aitracenex.com`，让 `api` / `www` 子域共享同一份 session cookie，迁移期内两个入口都可继续访问；已登录老用户访问原域名时会重新签发共享域 cookie，降低切到主域时掉登录的概率。
+- **行为**：新增 `SESSION_COOKIE_DOMAIN` 环境变量；默认空值保持 upstream host-only 行为。生产可设置为 `.aitracenex.com`，让 `api` / `www` 子域共享同一份 session cookie，迁移期内两个入口都可继续访问；已登录老用户访问原域名时会重新签发共享域 cookie，降低切到主域时掉登录的概率。2026-07-06 同步 upstream `SESSION_COOKIE_SECURE` / `SESSION_COOKIE_TRUSTED_URL` 后，`SessionOptions()` 同时应用 domain 与 secure 设置，两套配置不互斥。
 - **冲突风险**：低（`main.go` session options 小范围抽函数；默认行为不变）
 - **Merge 策略**：若 upstream 后续支持 session cookie domain，优先采用 upstream 配置名；保留空值 host-only、显式 `.aitracenex.com` 共享的语义。
 
