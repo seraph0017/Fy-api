@@ -81,7 +81,7 @@ var OptionMapRWMutex sync.RWMutex
 
 var ItemsPerPage = 10
 var MaxRecentItems = 1000
-var MaxLogExportItems = 50000 // 导出日志时的最大条数限制
+var MaxLogExportItems = 500000 // Fy-api overlay: 导出日志时的最大条数限制
 
 var PasswordLoginEnabled = true
 var PasswordRegisterEnabled = true
