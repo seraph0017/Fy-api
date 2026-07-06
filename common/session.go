@@ -20,3 +20,15 @@ func SessionOptions() sessions.Options {
 	}
 	return options
 }
+
+// Fy-api overlay: clear host-only cookies left before SESSION_COOKIE_DOMAIN migration.
+func ClearLegacyHostOnlySessionCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "session",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+	})
+}
