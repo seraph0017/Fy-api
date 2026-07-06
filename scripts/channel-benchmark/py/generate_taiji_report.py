@@ -60,7 +60,7 @@ MODEL_SHORT = {
 }
 
 BASE = Path(__file__).parent
-GO_JSON = Path("/Users/jimmy/go/src/Fy-api/scripts/channel-benchmark/go/benchmark-results/benchmark_2026-05-15_00-20-31.json")
+SMOKE_JSON = BASE / "smoke-results/benchmark_2026-05-15_00-20-31.json"
 LT_FILES = {
     "claude-haiku-4-5-20251001": BASE / "loadtest-results/loadtest_combined_claude-haiku-4-5-20251001.json",
     "claude-sonnet-4-6":          BASE / "loadtest-results/loadtest_combined_claude-sonnet-4-6.json",
@@ -80,6 +80,19 @@ OUT_PDF = BASE / f"reports/taiji-report-{datetime.now(timezone.utc).strftime('%Y
 def _load(p: Path):
     with open(p, encoding="utf-8") as f:
         return json.load(f)
+
+
+def _smoke_field(row: dict, snake: str, legacy: str, default=None):
+    return row.get(snake, row.get(legacy, default))
+
+
+def _smoke_stat(row: dict, stat: str, snake: str, legacy: str, default=None):
+    block = row.get(stat.lower()) or row.get(stat.upper()) or {}
+    return block.get(snake, block.get(legacy, default))
+
+
+def _smoke_rows(smoke_data: dict):
+    return smoke_data.get("results", [])
 
 
 def _styles():
@@ -187,23 +200,24 @@ def _parse_lt_ch30(data):
     return None
 
 
-def _smoke_section(s, go_data):
-    results = [r for r in go_data["results"] if r["ChannelID"] == 30]
+def _smoke_section(s, smoke_data):
+    results = [r for r in _smoke_rows(smoke_data) if _smoke_field(r, "channel_id", "ChannelID") == 30]
     header = ["模型", "模式", "成功率", "E2E p50(ms)", "E2E p95(ms)", "TTFT p95(ms)", "ITL p95(ms)"]
     rows = [header]
     for m in MODELS:
         for streamed in [False, True]:
             for r in results:
-                if r["Model"] == m and r["Streamed"] == streamed:
-                    e2e, ttft, itl = r["E2E"], r["TTFT"], r["ITL"]
+                if _smoke_field(r, "model", "Model") == m and _smoke_field(r, "streamed", "Streamed") == streamed:
                     rows.append([
                         MODEL_SHORT[m],
                         "流式" if streamed else "非流式",
-                        f"{r['SuccessRatePct']:.0f}%",
-                        f"{e2e['P50Ms']:.0f}",
-                        f"{e2e['P95Ms']:.0f}",
-                        f"{ttft['P95Ms']:.0f}" if ttft["Samples"] > 0 else "—",
-                        f"{itl['P95Ms']:.1f}" if itl["Samples"] > 0 else "—",
+                        f"{_smoke_field(r, 'success_rate_pct', 'SuccessRatePct'):.0f}%",
+                        f"{_smoke_stat(r, 'e2e', 'p50_ms', 'P50Ms'):.0f}",
+                        f"{_smoke_stat(r, 'e2e', 'p95_ms', 'P95Ms'):.0f}",
+                        f"{_smoke_stat(r, 'ttft', 'p95_ms', 'P95Ms'):.0f}"
+                        if _smoke_stat(r, 'ttft', 'samples', 'Samples', 0) > 0 else "—",
+                        f"{_smoke_stat(r, 'itl', 'p95_ms', 'P95Ms'):.1f}"
+                        if _smoke_stat(r, 'itl', 'samples', 'Samples', 0) > 0 else "—",
                     ])
 
     fig, ax = plt.subplots(figsize=(8, 4))
@@ -212,10 +226,10 @@ def _smoke_section(s, go_data):
     nonstream_p95 = []
     for m in MODELS:
         for r in results:
-            if r["Model"] == m and r["Streamed"]:
-                stream_p95.append(r["E2E"]["P95Ms"])
-            if r["Model"] == m and not r["Streamed"]:
-                nonstream_p95.append(r["E2E"]["P95Ms"])
+            if _smoke_field(r, "model", "Model") == m and _smoke_field(r, "streamed", "Streamed"):
+                stream_p95.append(_smoke_stat(r, "e2e", "p95_ms", "P95Ms"))
+            if _smoke_field(r, "model", "Model") == m and not _smoke_field(r, "streamed", "Streamed"):
+                nonstream_p95.append(_smoke_stat(r, "e2e", "p95_ms", "P95Ms"))
     w = 0.35
     ax.bar(x - w/2, nonstream_p95, w, label="非流式", color=ACCENT, alpha=0.85)
     ax.bar(x + w/2, stream_p95, w, label="流式", color=WARN_COLOR, alpha=0.85)
@@ -409,7 +423,7 @@ def _conformance_section(s, cf_by_model):
     ]
 
 
-def _conclusions(s, go_data, lt_by_model, cf_by_model):
+def _conclusions(s, smoke_data, lt_by_model, cf_by_model):
     elems = [
         _p("五、测试结论与优化建议", "H2", s),
         HRFlowable(width="100%", thickness=2, color=colors.HexColor(WARN_COLOR)),
@@ -484,7 +498,7 @@ def _conclusions(s, go_data, lt_by_model, cf_by_model):
 
 
 def main():
-    go_data = _load(GO_JSON)
+    smoke_data = _load(SMOKE_JSON)
 
     lt_by_model = {}
     for m, p in LT_FILES.items():
@@ -503,8 +517,8 @@ def main():
     s = _styles()
     story = []
     story += _cover(s)
-    story += _conclusions(s, go_data, lt_by_model, cf_by_model)
-    story += _smoke_section(s, go_data)
+    story += _conclusions(s, smoke_data, lt_by_model, cf_by_model)
+    story += _smoke_section(s, smoke_data)
     story += _loadtest_section(s, lt_by_model)
     story += _quality_section(s, qa_data)
     story += _conformance_section(s, cf_by_model)

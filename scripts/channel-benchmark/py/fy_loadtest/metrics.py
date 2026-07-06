@@ -75,7 +75,7 @@ class LevelAggregate:
 
 
 def percentile(sorted_vals: list[float], p: float) -> float:
-    """Linear-interpolation percentile (matches NumPy default and our Go tool)."""
+    """Linear-interpolation percentile (matches NumPy default and fy-smoke)."""
     if not sorted_vals:
         return 0.0
     if p <= 0:

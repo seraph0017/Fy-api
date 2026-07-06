@@ -43,6 +43,9 @@ image-canary = [
 # Optional local tokenization (Fy-api should return `usage`; kept as fallback).
 tiktoken = ["tiktoken>=0.7"]
 
+# Fixture regeneration for protocol/parameter compatibility probes.
+fixtures = ["Pillow>=10.0"]
+
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
@@ -61,13 +64,15 @@ fy-score       = "fy_score.cli:main"
 fy-integrity   = "fy_integrity.cli:main"
 fy-cache-affinity = "fy_cache_affinity.cli:main"
 fy-poc-loadtest = "fy_poc_loadtest.cli:main"
+fy-smoke       = "fy_smoke.cli:main"
+fy-benchmark   = "fy_benchmark.cli:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["fy_loadtest", "fy_quality", "fy_canary", "fy_conformance", "fy_image_conformance", "fy_image_loadtest", "fy_image_canary", "fy_eval", "fy_score", "fy_integrity", "fy_cache_affinity", "fy_poc_loadtest"]
+packages = ["fy_loadtest", "fy_quality", "fy_canary", "fy_conformance", "fy_image_conformance", "fy_image_loadtest", "fy_image_canary", "fy_eval", "fy_score", "fy_integrity", "fy_cache_affinity", "fy_poc_loadtest", "fy_smoke", "fy_benchmark"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

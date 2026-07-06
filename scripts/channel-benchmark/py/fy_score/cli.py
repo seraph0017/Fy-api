@@ -25,7 +25,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="SLO-anchored channel scorecard generator (5 dimensions).",
     )
     p.add_argument("-c", "--config", type=Path, help="YAML config file")
-    p.add_argument("--smoke", type=Path, nargs="*", help="Go smoke-test result JSON(s)")
+    p.add_argument("--smoke", type=Path, nargs="*", help="fy-smoke result JSON(s)")
     p.add_argument("--loadtest", type=Path, nargs="*", help="fy-loadtest result JSON(s)")
     p.add_argument("--quality", type=Path, nargs="*", help="fy-quality result JSON(s)")
     p.add_argument("--canary", type=Path, nargs="*", help="fy-canary result JSON(s)")
