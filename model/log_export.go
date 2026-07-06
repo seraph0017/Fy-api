@@ -23,11 +23,11 @@ func GetAllLogsForExport(logType int, startTimestamp int64, endTimestamp int64,
 	if logType != LogTypeUnknown {
 		tx = tx.Where("logs.type = ?", logType)
 	}
-	if modelName != "" {
-		tx = tx.Where("logs.model_name like ?", modelName)
+	if tx, err = applyExplicitLogTextFilter(tx, "logs.model_name", modelName); err != nil {
+		return nil, err
 	}
-	if username != "" {
-		tx = tx.Where("logs.username = ?", username)
+	if tx, err = applyExplicitLogTextFilter(tx, "logs.username", username); err != nil {
+		return nil, err
 	}
 	if tokenName != "" {
 		tx = tx.Where("logs.token_name = ?", tokenName)
@@ -48,7 +48,11 @@ func GetAllLogsForExport(logType int, startTimestamp int64, endTimestamp int64,
 		tx = tx.Where("logs."+logGroupCol+" = ?", group)
 	}
 
-	err = tx.Order("logs.id desc").Limit(common.MaxLogExportItems).Find(&logs).Error
+	order := "logs.id desc"
+	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
+		order = clickHouseLogOrder("logs.")
+	}
+	err = tx.Order(order).Limit(common.MaxLogExportItems).Find(&logs).Error
 	if err != nil {
 		return nil, err
 	}
@@ -66,12 +70,8 @@ func GetUserLogsForExport(userId int, logType int, startTimestamp int64, endTime
 	if logType != LogTypeUnknown {
 		tx = tx.Where("logs.type = ?", logType)
 	}
-	if modelName != "" {
-		modelNamePattern, perr := sanitizeLikePattern(modelName)
-		if perr != nil {
-			return nil, perr
-		}
-		tx = tx.Where("logs.model_name LIKE ? ESCAPE '!'", modelNamePattern)
+	if tx, err = applyExplicitLogTextFilter(tx, "logs.model_name", modelName); err != nil {
+		return nil, err
 	}
 	if tokenName != "" {
 		tx = tx.Where("logs.token_name = ?", tokenName)
@@ -89,7 +89,11 @@ func GetUserLogsForExport(userId int, logType int, startTimestamp int64, endTime
 		tx = tx.Where("logs."+logGroupCol+" = ?", group)
 	}
 
-	err = tx.Order("logs.id desc").Limit(common.MaxLogExportItems).Find(&logs).Error
+	order := "logs.id desc"
+	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
+		order = clickHouseLogOrder("logs.")
+	}
+	err = tx.Order(order).Limit(common.MaxLogExportItems).Find(&logs).Error
 	if err != nil {
 		return nil, err
 	}

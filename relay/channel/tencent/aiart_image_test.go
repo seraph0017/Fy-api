@@ -308,8 +308,6 @@ func TestTencentAIArtImageResponsePropagatesStringCodeError(t *testing.T) {
 }
 
 func TestTencentAIArtImageResponseConvertsURLToBase64WhenRequested(t *testing.T) {
-	t.Parallel()
-
 	imageServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
 		_, _ = w.Write([]byte{
@@ -373,8 +371,6 @@ func TestTencentAIArtImageResponseConvertsURLToBase64WhenRequested(t *testing.T)
 }
 
 func TestTencentAIArtImageResponseDefaultsToBase64(t *testing.T) {
-	t.Parallel()
-
 	imageServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
 		_, _ = w.Write([]byte{

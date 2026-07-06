@@ -15,8 +15,9 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel"
 	"github.com/QuantumNous/new-api/relay/channel/openai"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
-	relayconstant "github.com/QuantumNous/new-api/relay/constant"
+	"github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/service/relayconvert"
 	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/setting/reasoning"
 	"github.com/QuantumNous/new-api/types"
@@ -146,7 +147,7 @@ func (a *Adaptor) convertGeminiImagePreviewRequest(c *gin.Context, info *relayco
 		parts = append(parts, dto.GeminiPart{Text: request.Prompt})
 	}
 
-	if info.RelayMode == relayconstant.RelayModeImagesEdits {
+	if info.RelayMode == constant.RelayModeImagesEdits {
 		hasInputImage := false
 		if isMultipartFormRequest(c) {
 			if imageParts, err := readMultipartImageParts(c, "image", "image[]"); err != nil {
@@ -426,7 +427,7 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 	// 导致 gemini-3-pro-image-preview 等只在 v1beta 暴露的模型返回
 	// "is not found for API version v1"。仅在 RelayModeGemini 下生效，
 	// 不影响 OpenAI/Claude 兼容入口对版本的统一管理。
-	if info.RelayMode == relayconstant.RelayModeGemini {
+	if info.RelayMode == constant.RelayModeGemini {
 		if strings.HasPrefix(info.RequestURLPath, "/v1beta/") {
 			version = "v1beta"
 		} else if strings.HasPrefix(info.RequestURLPath, "/v1/") {
@@ -451,7 +452,7 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 	action := "generateContent"
 	if info.IsStream {
 		action = "streamGenerateContent?alt=sse"
-		if info.RelayMode == relayconstant.RelayModeGemini {
+		if info.RelayMode == constant.RelayModeGemini {
 			info.DisablePing = true
 		}
 	}
@@ -461,7 +462,7 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *relaycommon.RelayInfo) error {
 	channel.SetupApiRequestHeader(info, c, req)
 	if isGeminiImagePreviewModel(info.UpstreamModelName) &&
-		(info.RelayMode == relayconstant.RelayModeImagesGenerations || info.RelayMode == relayconstant.RelayModeImagesEdits) {
+		(info.RelayMode == constant.RelayModeImagesGenerations || info.RelayMode == constant.RelayModeImagesEdits) {
 		req.Set("Content-Type", "application/json")
 	}
 	req.Set("x-goog-api-key", info.ApiKey)
@@ -530,8 +531,17 @@ func (a *Adaptor) ConvertEmbeddingRequest(c *gin.Context, info *relaycommon.Rela
 }
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
-	// TODO implement me
-	return nil, errors.New("not implemented")
+	request, err := preprocessGeminiOpenAIResponsesRequest(request)
+	if err != nil {
+		return nil, err
+	}
+
+	chatRequest, err := relayconvert.ResponsesRequestToChatCompletionsRequest(&request)
+	if err != nil {
+		return nil, err
+	}
+
+	return a.ConvertOpenAIRequest(c, info, chatRequest)
 }
 
 func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, requestBody io.Reader) (any, error) {
@@ -539,7 +549,14 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, request
 }
 
 func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (usage any, err *types.NewAPIError) {
-	if info.RelayMode == relayconstant.RelayModeGemini {
+	if info.RelayMode == constant.RelayModeResponses {
+		if info.IsStream {
+			return GeminiResponsesStreamHandler(c, info, resp)
+		}
+		return GeminiResponsesHandler(c, info, resp)
+	}
+
+	if info.RelayMode == constant.RelayModeGemini {
 		if strings.Contains(info.RequestURLPath, ":embedContent") ||
 			strings.Contains(info.RequestURLPath, ":batchEmbedContents") {
 			return NativeGeminiEmbeddingHandler(c, resp, info)

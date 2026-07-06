@@ -53,13 +53,15 @@ type requestPayload struct {
 	Tools                 []struct {
 		Type string `json:"type,omitempty"`
 	} `json:"tools,omitempty"`
-	Resolution  string         `json:"resolution,omitempty"`
-	Ratio       string         `json:"ratio,omitempty"`
-	Duration    *dto.IntValue  `json:"duration,omitempty"`
-	Frames      *dto.IntValue  `json:"frames,omitempty"`
-	Seed        *dto.IntValue  `json:"seed,omitempty"`
-	CameraFixed *dto.BoolValue `json:"camera_fixed,omitempty"`
-	Watermark   *dto.BoolValue `json:"watermark,omitempty"`
+	SafetyIdentifier string         `json:"safety_identifier,omitempty"`
+	Priority         *dto.IntValue  `json:"priority,omitempty"`
+	Resolution       string         `json:"resolution,omitempty"`
+	Ratio            string         `json:"ratio,omitempty"`
+	Duration         *dto.IntValue  `json:"duration,omitempty"`
+	Frames           *dto.IntValue  `json:"frames,omitempty"`
+	Seed             *dto.IntValue  `json:"seed,omitempty"`
+	CameraFixed      *dto.BoolValue `json:"camera_fixed,omitempty"`
+	Watermark        *dto.BoolValue `json:"watermark,omitempty"`
 }
 
 type responsePayload struct {
@@ -140,15 +142,18 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 		return nil
 	}
 	ratios := make(map[string]float64)
-	if analysis, err := service.AnalyzeVideoRequest(req); err == nil && analysis.RequestedResolution == "1080p" {
-		if ratio, ok := GetSeedance1080pBillingRatio(info.OriginModelName); ok {
-			ratios["seedance_1080p"] = ratio
+	resolution := ""
+	if analysis, err := service.AnalyzeVideoRequest(req); err == nil {
+		resolution = analysis.RequestedResolution
+		if analysis.RequestedResolution == "1080p" {
+			if ratio, ok := GetSeedance1080pBillingRatio(info.OriginModelName); ok {
+				ratios["seedance_1080p"] = ratio
+			}
 		}
 	}
-	if hasVideoInMetadata(req.Metadata) {
-		if ratio, ok := GetVideoInputRatio(info.OriginModelName); ok {
-			ratios["video_input"] = ratio
-		}
+	hasVideo := hasVideoInMetadata(req.Metadata)
+	if ratio, ok := GetVideoInputRatio(info.OriginModelName, resolution, hasVideo); ok && ratio != 1.0 {
+		ratios["video_input"] = ratio
 	}
 	if len(ratios) == 0 {
 		return nil

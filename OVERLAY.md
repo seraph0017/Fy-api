@@ -1,8 +1,8 @@
 # TraceNex 定制清单（OVERLAY.md）
 
-> 最后更新：2026-07-03（image-edit-timeout-3x）
+> 最后更新：2026-07-06（刷新 upstream sync PR 到 1e80ce03）
 > 维护人：<你的名字>
-> 上游基线：new-api @ `9bc1a53d` (2026-06-15)
+> 上游基线：new-api @ `1e80ce03` (2026-07-06)
 >
 > **重要：上游 v1.0（commit `a42b39760`，2026-04-28）把整个老前端搬到了 `web/classic/`，并行新建了 `web/default/`（React 19 + TypeScript + Rsbuild + Base UI + Tailwind）。TraceNex 选择路径 A：所有前端 overlay 跟随 `web/classic/` 路径，runtime theme 锁死在 `"classic"`，不允许切到 default。详见 `docs/上游v1.0前端重写炸弹-影响分析与对策.md`。**
 
@@ -41,6 +41,7 @@
   - `model/log_export.go`（GetAllLogsForExport / GetUserLogsForExport / attachChannelNames）
 - **修改文件**：`router/api-router.go`（注册 /api/log/export + /api/log/self/export，仅 2 行）
 - **导出字段**：CSV 镜像使用日志表格，包含 request_id，并从 `logs.other` 解析 `cache_tokens` / `cache_write_tokens` / `cache_creation_tokens*` 导出“缓存读”“缓存写”token 列
+- **ClickHouse 兼容**：导出查询复用 `model/log.go` 的显式文本过滤 helper；ClickHouse 日志库下不使用 `LIKE ... ESCAPE '!'`，排序跟随 `created_at/request_id`，避免 CSV export 和页面查询语义分叉
 - **冲突风险**：低（独立文件 + 2 行 router 注册）
 - **Merge 策略**：router 两行加在 `logRoute.GET("/self/search", ...)` 之后，若 upstream 也改了 logRoute，手动对齐位置
 
@@ -86,7 +87,7 @@
 - **修改文件**：`common/constants.go`、`common/init.go`、`common/session.go`、`main.go`、`config/fy-api.env.example`
 - **新增测试**：`common/session_test.go::TestSessionOptionsCookieDomain`
 - **背景**：HK 生产同时保留 `api.aitracenex.com` 和 `www.aitracenex.com` 入口。浏览器默认 host-only session cookie 导致用户在一个子域登录后跳到另一个子域时看起来像“自动退出”。
-- **行为**：新增 `SESSION_COOKIE_DOMAIN` 环境变量；默认空值保持 upstream host-only 行为。生产可设置为 `.aitracenex.com`，让 `api` / `www` 子域共享同一份 session cookie，迁移期内两个入口都可继续访问；已登录老用户访问原域名时会重新签发共享域 cookie，降低切到主域时掉登录的概率。
+- **行为**：新增 `SESSION_COOKIE_DOMAIN` 环境变量；默认空值保持 upstream host-only 行为。生产可设置为 `.aitracenex.com`，让 `api` / `www` 子域共享同一份 session cookie，迁移期内两个入口都可继续访问；已登录老用户访问原域名时会重新签发共享域 cookie，降低切到主域时掉登录的概率。2026-07-06 同步 upstream `SESSION_COOKIE_SECURE` / `SESSION_COOKIE_TRUSTED_URL` 后，`SessionOptions()` 同时应用 domain 与 secure 设置，两套配置不互斥。
 - **冲突风险**：低（`main.go` session options 小范围抽函数；默认行为不变）
 - **Merge 策略**：若 upstream 后续支持 session cookie domain，优先采用 upstream 配置名；保留空值 host-only、显式 `.aitracenex.com` 共享的语义。
 
@@ -253,7 +254,8 @@
 - **行为**：
   1. 正常转发前仅移除 OpenAI Responses 不接受的客户端内部字段；
   2. 若上游明确返回 `400 + encrypted content could not be verified`，则仅重试一次，并在重试时移除失效 `encrypted_content` 块，让请求退化为明文上下文继续执行；
-  3. 非该特定错误不触发自动重试。
+  3. 原生 `/v1/responses` 与 chat→responses 兼容路径都保留已转换的 outbound JSON 作为重试输入，避免 body reader 消耗后无法降级；
+  4. 非该特定错误不触发自动重试。
 - **取舍**：这是 availability-first 兜底，不会尝试“解密”或伪造客户端密文状态；代价是重试后可能丢失隐藏推理上下文，但优先避免整次请求直接 400。
 - **冲突风险**：中（`responses` 路径仍属上游活跃区域）
 - **Merge 策略**：若 upstream 后续合入原生 `encrypted_content` 亲和 / 重试支持，优先采用 upstream；保留本地“只对特定 400 单次降级”的行为语义直到 upstream 证明等价。
