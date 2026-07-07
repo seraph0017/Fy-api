@@ -545,6 +545,16 @@
 - **行为**：仅对 Gemini image-preview 模型的 `/v1/images/edits` 路径生效，不影响 Imagen 或 chat 路线
 - **冲突风险**：极低（adaptor.go 内 `geminiImagePartFromEncodedString` 新增 4 行分支 + 独立新函数 `downloadGeminiImageParts`）
 
+### B-32 [audit] 渠道更新记录 priority/weight before-after
+
+- **问题**：生产排查 gpt-image-2 渠道分流时，`channel.update` 管理日志只记录 `changed_fields`，且原逻辑没有把 `priority` / `weight` 纳入字段列表；如果 binlog 已轮转，就无法还原渠道 8/52 当时保存的优先级和权重。
+- **修改文件**：
+  - `controller/channel.go`（`// Fy-api overlay:`：`UpdateChannel` 审计参数新增 `selection.before/after`，包含 `status` / `group` / `models` / `priority` / `weight`；同时把 `priority` / `weight` 纳入 `changed_fields`，并写一条 `channel update selection audit` 服务日志）
+- **新增测试**：
+  - `controller/channel_update_audit_test.go`
+- **行为**：不记录 key/base_url 等敏感连接信息；只记录影响渠道选择的非敏感字段，便于后续从 `logs.other.op.params.selection` 或容器服务日志还原保存值。
+- **冲突风险**：低（`controller/channel.go` 的渠道更新审计区域是上游可能改动点；merge 时保留 selection audit 语义即可）
+
 ---
 
 ## 前端定制
