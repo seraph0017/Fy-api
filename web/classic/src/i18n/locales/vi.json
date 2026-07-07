@@ -1790,6 +1790,7 @@
     "日": "ngày",
     "日志导出成功": "Logs exported successfully",
     "日志已下载": "Logs downloaded",
+    "导出当前筛选条件下的日志为 CSV（最多 50 万条）": "Xuất nhật ký theo bộ lọc hiện tại thành CSV (tối đa 500.000 dòng)",
     "日志已加载": "Logs loaded",
     "日志已复制到剪贴板": "Logs copied to clipboard",
     "日志总大小": "Tổng kích thước nhật ký",

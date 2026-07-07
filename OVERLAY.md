@@ -1,6 +1,6 @@
 # TraceNex 定制清单（OVERLAY.md）
 
-> 最后更新：2026-07-03（image-edit-timeout-3x）
+> 最后更新：2026-07-06（log-export-500k）
 > 维护人：<你的名字>
 > 上游基线：new-api @ `9bc1a53d` (2026-06-15)
 >
@@ -24,7 +24,7 @@
 ### B-1 [brand] 系统名
 - **文件**：`common/constants.go`
 - **修改**：`var SystemName = "TraceNex"`（原 `"New API"`）
-- **新增变量**：`var MaxLogExportItems = 50000`
+- **新增变量**：`var MaxLogExportItems = 500000`
 - **冲突风险**：低（上游很少改这两行）
 - **Merge 策略**：如果 upstream 又加了变量，手动合并到此文件
 - **建议长期改造**：改成 overlay/brand/brand.go 里的 init() 函数覆盖，避免 merge
@@ -40,7 +40,7 @@
   - `controller/log_export.go`（ExportAllLogs / ExportUserLogs / writeLogsCSV）
   - `model/log_export.go`（GetAllLogsForExport / GetUserLogsForExport / attachChannelNames）
 - **修改文件**：`router/api-router.go`（注册 /api/log/export + /api/log/self/export，仅 2 行）
-- **导出字段**：CSV 镜像使用日志表格，包含 request_id，并从 `logs.other` 解析 `cache_tokens` / `cache_write_tokens` / `cache_creation_tokens*` 导出“缓存读”“缓存写”token 列
+- **导出字段**：CSV 镜像使用日志表格，最多 50 万条，包含 request_id，并从 `logs.other` 解析 `cache_tokens` / `cache_write_tokens` / `cache_creation_tokens*` 导出“缓存读”“缓存写”token 列
 - **冲突风险**：低（独立文件 + 2 行 router 注册）
 - **Merge 策略**：router 两行加在 `logRoute.GET("/self/search", ...)` 之后，若 upstream 也改了 logRoute，手动对齐位置
 

@@ -95,7 +95,7 @@ const UsageLogsExportButton = ({ formApi, isAdminUser, t }) => {
   };
 
   return (
-    <Tooltip content={t('导出当前筛选条件下的日志为 CSV（最多 5 万条）')}>
+    <Tooltip content={t('导出当前筛选条件下的日志为 CSV（最多 50 万条）')}>
       <Button
         theme='light'
         type='tertiary'
