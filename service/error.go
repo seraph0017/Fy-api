@@ -17,6 +17,22 @@ import (
 	"github.com/QuantumNous/new-api/types"
 )
 
+const upstreamErrorBodyPreviewLimit = 1024
+
+var upstreamErrorHeaderAllowlist = map[string]struct{}{
+	"apim-request-id":      {},
+	"cf-ray":               {},
+	"openai-processing-ms": {},
+	"retry-after":          {},
+	"server":               {},
+	"via":                  {},
+	"x-azure-ref":          {},
+	"x-cache":              {},
+	"x-ms-region":          {},
+	"x-ms-request-id":      {},
+	"x-request-id":         {},
+}
+
 func MidjourneyErrorWrapper(code int, desc string) *dto.MidjourneyResponse {
 	return &dto.MidjourneyResponse{
 		Code:        code,
@@ -91,6 +107,10 @@ func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFai
 		return
 	}
 	CloseResponseBodyGracefully(resp)
+	// Fy-api overlay: keep a small, sanitized upstream fingerprint on error logs
+	// so 5xx incidents can be attributed to Cloudflare, Azure APIM, nginx, etc.
+	upstreamDebugMetadata := buildUpstreamErrorDebugMetadata(resp, responseBody)
+	newApiErr.Metadata = upstreamDebugMetadata
 	var errResponse dto.GeneralErrorResponse
 	responseBodyText := string(responseBody)
 	responseBodyPreview := common.LocalLogPreview(responseBodyText)
@@ -117,6 +137,7 @@ func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFai
 		oaiError := errResponse.TryToOpenAIError()
 		if oaiError != nil {
 			newApiErr = types.WithOpenAIError(*oaiError, resp.StatusCode)
+			newApiErr.Metadata = upstreamDebugMetadata
 			if showBodyWhenFail {
 				newApiErr.Err = buildErrWithBody(newApiErr.Error())
 			}
@@ -124,10 +145,65 @@ func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFai
 		}
 	}
 	newApiErr = types.NewOpenAIError(errors.New(errResponse.ToMessage()), types.ErrorCodeBadResponseStatusCode, resp.StatusCode)
+	newApiErr.Metadata = upstreamDebugMetadata
 	if showBodyWhenFail {
 		newApiErr.Err = buildErrWithBody(newApiErr.Error())
 	}
 	return
+}
+
+func buildUpstreamErrorDebugMetadata(resp *http.Response, responseBody []byte) json.RawMessage {
+	if resp == nil {
+		return nil
+	}
+	debug := map[string]interface{}{
+		"status_code": resp.StatusCode,
+	}
+	if resp.Request != nil && resp.Request.URL != nil {
+		if host := strings.TrimSpace(resp.Request.URL.Host); host != "" {
+			debug["host"] = host
+		}
+	}
+	if len(resp.Header) > 0 {
+		headers := make(map[string]string)
+		for name, values := range resp.Header {
+			headerName := strings.ToLower(strings.TrimSpace(name))
+			if !isAllowedUpstreamErrorHeader(headerName) || len(values) == 0 {
+				continue
+			}
+			value := strings.TrimSpace(values[0])
+			if value != "" {
+				headers[headerName] = value
+			}
+		}
+		if len(headers) > 0 {
+			debug["headers"] = headers
+		}
+	}
+	if len(responseBody) > 0 {
+		debug["body_preview"] = upstreamErrorBodyPreview(responseBody)
+	}
+	metadata, err := common.Marshal(map[string]interface{}{
+		"upstream_debug": debug,
+	})
+	if err != nil {
+		return nil
+	}
+	return metadata
+}
+
+func isAllowedUpstreamErrorHeader(name string) bool {
+	if _, ok := upstreamErrorHeaderAllowlist[name]; ok {
+		return true
+	}
+	return strings.HasPrefix(name, "x-ratelimit-")
+}
+
+func upstreamErrorBodyPreview(body []byte) string {
+	if len(body) <= upstreamErrorBodyPreviewLimit {
+		return string(body)
+	}
+	return fmt.Sprintf("%s... [truncated, original_length=%d, limit=%d]", string(body[:upstreamErrorBodyPreviewLimit]), len(body), upstreamErrorBodyPreviewLimit)
 }
 
 func ResetStatusCode(newApiErr *types.NewAPIError, statusCodeMappingStr string) {

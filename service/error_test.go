@@ -122,6 +122,46 @@ func TestRelayErrorHandlerKeepsOpenAIErrorMessage(t *testing.T) {
 	require.Equal(t, message, newAPIError.Error())
 }
 
+func TestRelayErrorHandlerCapturesUpstreamDebugMetadata(t *testing.T) {
+	body := strings.Repeat("gateway timeout ", 100)
+	req, err := http.NewRequest(http.MethodPost, "https://trace-openai-prod.openai.azure.com/openai/images/generations", nil)
+	require.NoError(t, err)
+	resp := &http.Response{
+		StatusCode: http.StatusGatewayTimeout,
+		Header: http.Header{
+			"Server":          []string{"nginx"},
+			"Cf-Ray":          []string{"abc-HKG"},
+			"X-Ms-Request-Id": []string{"ms-request"},
+			"Retry-After":     []string{"30"},
+			"Authorization":   []string{"Bearer secret"},
+		},
+		Body:    io.NopCloser(strings.NewReader(body)),
+		Request: req,
+	}
+
+	newAPIError := RelayErrorHandler(context.Background(), resp, false)
+
+	require.NotNil(t, newAPIError)
+	require.NotEmpty(t, newAPIError.Metadata)
+
+	var metadata map[string]interface{}
+	require.NoError(t, common.Unmarshal(newAPIError.Metadata, &metadata))
+	debug, ok := metadata["upstream_debug"].(map[string]interface{})
+	require.True(t, ok)
+	require.Equal(t, "trace-openai-prod.openai.azure.com", debug["host"])
+	require.Equal(t, float64(http.StatusGatewayTimeout), debug["status_code"])
+	require.Contains(t, debug["body_preview"], "gateway timeout")
+	require.NotContains(t, debug["body_preview"], strings.Repeat("gateway timeout ", 100))
+
+	headers, ok := debug["headers"].(map[string]interface{})
+	require.True(t, ok)
+	require.Equal(t, "nginx", headers["server"])
+	require.Equal(t, "abc-HKG", headers["cf-ray"])
+	require.Equal(t, "ms-request", headers["x-ms-request-id"])
+	require.Equal(t, "30", headers["retry-after"])
+	require.NotContains(t, headers, "authorization")
+}
+
 func TestRelayErrorHandlerKeepsInvalidJSONBodyInDebugLog(t *testing.T) {
 	withDebugEnabled(t, true)
 

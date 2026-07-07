@@ -545,7 +545,19 @@
 - **行为**：仅对 Gemini image-preview 模型的 `/v1/images/edits` 路径生效，不影响 Imagen 或 chat 路线
 - **冲突风险**：极低（adaptor.go 内 `geminiImagePartFromEncodedString` 新增 4 行分支 + 独立新函数 `downloadGeminiImageParts`）
 
-### B-32 [audit] 渠道更新记录 priority/weight before-after
+### B-32 [relay/observability] 上游错误响应诊断信息
+
+- **问题**：排查 gpt-image-2 上游 504 时，现有 error log 只有状态码、错误码、渠道和重试链，缺少判断 504 来源所需的 `server` / `cf-ray` / `x-ms-request-id` / `apim-request-id` / body preview 等信息。
+- **修改文件**：
+  - `service/error.go`：`RelayErrorHandler` 在非 2xx 响应读 body 后，把上游 host、status、白名单 header 和 1KB body preview 写入 `NewAPIError.Metadata.upstream_debug`
+  - `controller/relay.go`：`processChannelError` 写 error log 时把 `Metadata.upstream_debug` 合并到 `logs.other.admin_info.upstream_debug`（普通用户自助日志会剥离 `admin_info`）
+- **新增测试**：
+  - `service/error_test.go`：验证 504 响应会记录白名单 header、host、截断 body preview，且不记录 `Authorization`
+  - `controller/relay_error_metadata_test.go`：验证 error metadata 只把 `upstream_debug` 合并进日志 other
+- **行为**：不改日志表结构，不向普通响应增加字段；只在 error log 的 `other.admin_info` JSON 中保留受控诊断信息。
+- **冲突风险**：低（两处小函数，均带 `// Fy-api overlay:` 注释）
+
+### B-33 [audit] 渠道更新记录 priority/weight before-after
 
 - **问题**：生产排查 gpt-image-2 渠道分流时，`channel.update` 管理日志只记录 `changed_fields`，且原逻辑没有把 `priority` / `weight` 纳入字段列表；如果 binlog 已轮转，就无法还原渠道 8/52 当时保存的优先级和权重。
 - **修改文件**：
