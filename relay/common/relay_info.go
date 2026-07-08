@@ -436,6 +436,12 @@ func GenRelayInfoImage(c *gin.Context, request dto.Request) *RelayInfo {
 }
 
 func GenRelayInfoOpenAI(c *gin.Context, request dto.Request) *RelayInfo {
+	if _, ok := request.(*dto.ImageRequest); ok {
+		// Fy-api overlay: allow text-only chat/completions requests for
+		// OpenAI image models to be normalized into the image generation path
+		// before RelayInfo is created.
+		return GenRelayInfoImage(c, request)
+	}
 	info := genBaseRelayInfo(c, request)
 	info.RelayFormat = types.RelayFormatOpenAI
 	return info

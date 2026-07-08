@@ -264,6 +264,19 @@
   - `suites/api_compat.py` / `output_valid.py` / `prompt_follow.py` / `perf.py` / `safety.py`
   - 命令：`fy-image-conformance`
 
+### B-16.2 [image] gpt-image-* 文本 chat 请求兼容图片生成
+- **修改文件**：
+  - `relay/helper/valid_request.go`（`// Fy-api overlay:`：当 `/v1/chat/completions` 请求的模型是 `gpt-image-*` 或 `chatgpt-image-latest`，且消息内容只包含文本时，自动转换为 `dto.ImageRequest`，改写请求体与路径为 `/v1/images/generations`）
+  - `relay/common/relay_info.go`（`// Fy-api overlay:`：已转换成 `dto.ImageRequest` 的 OpenAI 请求在 `RelayInfo` 中标记为 `openai_image` 格式）
+- **新增测试**：
+  - `relay/helper/openai_image_chat_compat_test.go::TestGetAndValidateRequestConvertsTextOnlyImageChatToImageGeneration`
+  - `relay/helper/openai_image_chat_compat_test.go::TestGetAndValidateRequestRejectsMultimodalImageChatCompat`
+- **背景**：2026-07-08 HK 生产出现用户把 `gpt-image-2` 作为聊天模型打到 `/v1/chat/completions`，上游返回 `The requested operation is unsupported.`；upstream GitHub 也已有类似讨论（如 `QuantumNous/new-api` #4479 / #5701）。
+- **行为**：text-only chat messages 会拼接成图片 `prompt`，保留 `size` / `quality` / `n` / `stream` 以及部分图片生成参数（从原始 JSON 请求体读取，不污染普通 chat DTO），并复用现有 image generation 计费、渠道选择、上游转换和消费日志链路。
+- **限制**：包含 `image_url` / audio / file / video 等多模态内容的 chat 请求不会自动猜测为 `/v1/images/edits`，而是返回 400，提示客户改用 `/v1/images/edits`；避免在没有 multipart/file 语义的 chat 请求里错误转发编辑任务。
+- **冲突风险**：中（`valid_request.go` / `relay_info.go` 属于上游 relay 热区）
+- **Merge 策略**：若 upstream 后续提供官方 image-aware routing，优先采用 upstream；保留“text-only chat → image generation，多模态 chat 明确拒绝”的安全边界，除非 upstream 已完整支持 edits 语义。
+
 ### B-16 [deepseek] DeepSeek V4 `-nothink` / `-nothinking` 别名兼容
 - **修改文件**：
   - `setting/reasoning/suffix.go`（`// Fy-api overlay:`：在 DeepSeek V4 既有 `-none` / `-max` 之外，兼容客户端常用的 `-nothink` / `-nothinking`，统一映射到 `thinking.type=disabled`）
