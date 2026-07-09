@@ -581,8 +581,9 @@
 
 ### F-2 [brand] Logo 和 favicon
 - **新增**：`web/classic/public/new_logo.png` (3.4 MB)
-- **替换**：`web/classic/public/favicon.ico`
-- **冲突风险**：低（上游偶尔更新 logo.png，我们用 new_logo.png 独立）
+- **替换**：`web/classic/public/favicon.ico`、`web/classic/public/logo.png`
+- **原因**：前端在后台 `Logo` 配置为空时会 fallback 到 `/logo.png`；该文件必须是 TraceNex 默认图标，避免回退显示 upstream New API logo。
+- **冲突风险**：低（上游偶尔更新 logo.png，merge 时保留 TraceNex 版本）
 - **注意**：v1.0 merge 时 git 的 directory-rename 启发式会把 public 资源建议到 `web/default/public/`，**必须手动改到 `web/classic/public/`**
 
 ### F-3 [i18n] 品牌词替换
