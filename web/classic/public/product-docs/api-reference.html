@@ -1088,42 +1088,47 @@ for (const model of models.data) {
           <span class="badge badge-post">POST</span>
           <code>/v1/images/generations</code>
         </div>
-        <p>根据文本提示词生成图片。兼容 <a href="https://developers.openai.com/api/reference/resources/images/methods/generate" target="_blank" rel="noopener">OpenAI Images API</a>，支持 DALL-E、GPT Image、Gemini Imagen / image-preview、通义万相、火山、腾讯 AIArt 等模型。</p>
+        <p>根据文本提示词生成图片。入口兼容 <a href="https://developers.openai.com/api/reference/resources/images/methods/generate" target="_blank" rel="noopener">OpenAI Images Generate API</a>，但字段含义以本平台中转和目标渠道支持为准；不支持或被特殊处理的字段在下方单独说明。</p>
 
         <!-- Image Request -->
-        <h3 id="image-request">请求参数</h3>
+        <h3 id="image-request">请求参数（中转站兼容）</h3>
         <table>
           <thead><tr><th>参数</th><th>类型</th><th>必填</th><th>默认</th><th>说明</th></tr></thead>
           <tbody>
-            <tr><td><code>model</code></td><td>string</td><td>是</td><td>—</td><td>模型名，如 <code>gpt-image-2</code>、<code>gpt-image-1.5</code>、<code>gpt-image-1</code>、<code>gpt-image-1-mini</code>、<code>dall-e-3</code>、<code>imagen-*</code>、<code>gemini-*-image*</code></td></tr>
-            <tr><td><code>prompt</code></td><td>string</td><td>是</td><td>—</td><td>图片描述提示词。GPT Image 官方上限更高，DALL-E 2/3 上限较低；实际限制以上游模型为准</td></tr>
-            <tr><td><code>n</code></td><td>integer</td><td>否</td><td>1</td><td>生成张数，通常 1–10；<code>dall-e-3</code> 官方仅支持 1；部分上游会忽略或限制该值</td></tr>
-            <tr><td><code>size</code></td><td>string</td><td>否</td><td>"1024x1024"</td><td>图片尺寸。DALL-E 2：<code>256x256</code> / <code>512x512</code> / <code>1024x1024</code>；DALL-E 3：<code>1024x1024</code> / <code>1792x1024</code> / <code>1024x1792</code>；GPT Image 标准尺寸含 <code>1024x1024</code> / <code>1536x1024</code> / <code>1024x1536</code> / <code>auto</code>；<code>gpt-image-2</code> 官方支持符合限制的任意 <code>WIDTHxHEIGHT</code>。Gemini 适配会把常见尺寸映射为 aspect ratio 或 imageSize，见下方说明</td></tr>
-            <tr><td><code>quality</code></td><td>string</td><td>否</td><td>"auto"</td><td>质量档位：<code>"auto"</code> / <code>"high"</code> / <code>"medium"</code> / <code>"low"</code> 或 DALL-E <code>"standard"</code> / <code>"hd"</code></td></tr>
-            <tr><td><code>style</code></td><td>string</td><td>否</td><td>—</td><td>DALL-E 3 风格：<code>"vivid"</code> / <code>"natural"</code></td></tr>
-            <tr><td><code>response_format</code></td><td>string</td><td>否</td><td>—</td><td><code>"url"</code> 或 <code>"b64_json"</code>。OpenAI GPT Image 官方始终返回 base64；Azure <code>gpt-image-*</code> / <code>chatgpt-image-latest</code> 不支持此字段，本平台会在 Azure GPT image 请求中删除它</td></tr>
-            <tr><td><code>background</code></td><td>string</td><td>否</td><td>—</td><td>背景策略：<code>"auto"</code> / <code>"transparent"</code> / <code>"opaque"</code></td></tr>
-            <tr><td><code>moderation</code></td><td>string</td><td>否</td><td>—</td><td>内容审核：<code>"auto"</code> / <code>"low"</code></td></tr>
-            <tr><td><code>output_format</code></td><td>string</td><td>否</td><td>—</td><td>输出格式：<code>"png"</code> / <code>"jpeg"</code> / <code>"webp"</code></td></tr>
-            <tr><td><code>output_compression</code></td><td>integer</td><td>否</td><td>100</td><td>压缩质量 0–100，仅对 GPT Image 的 <code>jpeg</code> / <code>webp</code> 输出有效</td></tr>
-            <tr><td><code>stream</code></td><td>boolean</td><td>否</td><td>false</td><td>是否流式生成（需上游支持）</td></tr>
-            <tr><td><code>partial_images</code></td><td>integer</td><td>否</td><td>—</td><td>流式中间图数量，官方范围 0–3，仅 <code>stream:true</code> 时使用</td></tr>
+            <tr><td><code>model</code></td><td>string</td><td>是</td><td>—</td><td>模型名。常见路由包括 OpenAI/Azure GPT Image、DALL-E 兼容模型、Gemini <code>imagen*</code>、Gemini image-preview、通义万相、火山、腾讯 AIArt、MiniMax、Replicate 等；最终可用模型以控制台渠道配置为准。</td></tr>
+            <tr><td><code>prompt</code></td><td>string</td><td>是</td><td>—</td><td>图片描述提示词；长度、语言和安全策略以上游渠道为准。</td></tr>
+            <tr><td><code>n</code></td><td>integer</td><td>否</td><td>1</td><td>生成张数。网关默认补为 1；不同上游会限制、忽略或改写该值，例如 Gemini image-preview 转为 <code>candidateCount</code>，Gemini Imagen 转为 <code>sampleCount</code>。</td></tr>
+            <tr><td><code>size</code></td><td>string</td><td>否</td><td>按模型/渠道</td><td>尺寸或比例。OpenAI 兼容渠道会透传；DALL-E 兼容模型会做基础尺寸校验；Gemini 会映射到 <code>aspectRatio</code> 或 <code>imageSize</code>；MiniMax/火山/即梦等渠道会按各自支持范围转换。</td></tr>
+            <tr><td><code>quality</code></td><td>string</td><td>否</td><td>按模型/渠道</td><td>质量档位。<code>gpt-image-1</code> / <code>gpt-image-2</code> 会把空值或旧值规范化；Gemini 会映射为 <code>1K</code> / <code>2K</code> / <code>4K</code>；其他渠道是否生效以上游适配为准。</td></tr>
+            <tr><td><code>style</code></td><td>string | object</td><td>否</td><td>—</td><td>兼容字段，OpenAI DALL-E 3 可使用 <code>"vivid"</code> / <code>"natural"</code>；其他渠道一般透传或忽略。</td></tr>
+            <tr><td><code>response_format</code></td><td>string</td><td>否</td><td>按渠道</td><td><code>"url"</code> 或 <code>"b64_json"</code>。网关会接收该字段，但不是所有图片模型都支持；详细支持边界见下方说明。</td></tr>
+            <tr><td><code>background</code></td><td>string | object</td><td>否</td><td>—</td><td>兼容 GPT Image 背景策略：<code>"auto"</code> / <code>"transparent"</code> / <code>"opaque"</code>。非 GPT Image 渠道通常透传、忽略或不映射。</td></tr>
+            <tr><td><code>moderation</code></td><td>string | object</td><td>否</td><td>—</td><td>兼容 GPT Image 审核强度：<code>"auto"</code> / <code>"low"</code>。大多数非 OpenAI 渠道不映射，仍由上游自己的安全策略决定。</td></tr>
+            <tr><td><code>output_format</code></td><td>string | object</td><td>否</td><td>—</td><td>期望输出格式：<code>"png"</code> / <code>"jpeg"</code> / <code>"webp"</code>。OpenAI 兼容渠道透传；Gemini image-preview 当前不映射。</td></tr>
+            <tr><td><code>output_compression</code></td><td>integer | object</td><td>否</td><td>—</td><td>压缩质量 0–100。OpenAI 兼容渠道透传；非 OpenAI 渠道不保证生效。</td></tr>
+            <tr><td><code>stream</code></td><td>boolean</td><td>否</td><td>false</td><td>是否流式生成。网关会识别该字段，但只有上游和适配器都支持时才会返回图片 SSE 事件。</td></tr>
+            <tr><td><code>partial_images</code></td><td>integer | object</td><td>否</td><td>—</td><td>流式中间图数量。OpenAI GPT Image 兼容字段；Gemini image-preview 当前不映射。</td></tr>
             <tr><td><code>user</code></td><td>string</td><td>否</td><td>—</td><td>终端用户标识</td></tr>
+            <tr><td><code>extra_fields</code></td><td>object</td><td>否</td><td>—</td><td>平台扩展。部分渠道用于透传厂商私有字段，例如腾讯 AIArt、MiniMax 等。</td></tr>
+            <tr><td><code>watermark</code></td><td>boolean</td><td>否</td><td>—</td><td>平台扩展。部分渠道会映射为厂商水印开关，例如 MiniMax。</td></tr>
           </tbody>
         </table>
 
         <div class="callout warning">
-          <strong>注意：</strong>部分图片模型不支持 <code>response_format</code>。腾讯 AIArt 服务默认返回 <code>b64_json</code>，只有显式传 <code>response_format:"url"</code> 时才返回 COS URL。
+          <strong><code>response_format</code> 支持边界：</strong>OpenAI DALL-E 兼容模型可使用 <code>"url"</code> / <code>"b64_json"</code>；OpenAI GPT Image 官方不支持 URL 输出，通常返回 <code>b64_json</code>；Azure <code>gpt-image-*</code> / <code>chatgpt-image-latest</code> 会由网关删除 <code>response_format</code>，避免 Azure 上游拒绝；Gemini Imagen / image-preview 当前不映射该字段；腾讯 AIArt 默认转为 <code>b64_json</code>，仅显式传 <code>"url"</code> 时返回 COS URL；Replicate 仅在 <code>"b64_json"</code> 时把上游 URL 下载并转 base64，否则返回 URL。
         </div>
 
-        <h4>渠道兼容与 Gemini 图片模型映射</h4>
+        <h4>渠道兼容与特殊逻辑</h4>
         <table>
           <thead><tr><th>渠道/模型</th><th>网关行为</th><th>参数映射</th></tr></thead>
           <tbody>
-            <tr><td>OpenAI / Azure GPT Image</td><td>OpenAI 兼容透传；非流式使用统一 image response，流式使用 OpenAI image SSE 事件</td><td>Azure <code>gpt-image-*</code> / <code>chatgpt-image-latest</code> 会删除 <code>response_format</code>，避免 Azure 上游拒绝</td></tr>
-            <tr><td>Gemini <code>imagen*</code></td><td>转为 Gemini Imagen <code>models/{model}:predict</code></td><td><code>size</code> 转 <code>aspectRatio</code>：<code>1024x1024</code>→<code>1:1</code>、<code>1536x1024</code>→<code>3:2</code>、<code>1024x1536</code>→<code>2:3</code>、<code>1792x1024</code>→<code>16:9</code>、<code>1024x1792</code>→<code>9:16</code>；<code>quality=high/hd/2K</code> 转 <code>imageSize=2K</code>，<code>auto/medium/low/standard/1K</code> 转 <code>1K</code></td></tr>
-            <tr><td>Gemini image-preview：<code>gemini-3-pro-image*</code>、<code>gemini-3.1-flash-image*</code>、<code>gemini-2.5-flash-image</code></td><td>转为 Gemini <code>generateContent</code>，请求包含文本 prompt，并要求 <code>responseModalities=["TEXT","IMAGE"]</code></td><td><code>n</code> 转 <code>candidateCount</code>；<code>size</code> 转 <code>imageConfig.aspectRatio</code> 或 <code>imageConfig.imageSize</code>；<code>2048x2048</code> 转 <code>2K</code>，<code>4096x4096</code> 转 <code>4K</code>；这类模型版本默认钉到 <code>v1beta</code>，原生 Gemini <code>/v1beta/...</code> 入口会保留客户端路径版本</td></tr>
-            <tr><td>腾讯 AIArt</td><td>当 Tencent 渠道 base_url 为 <code>aiart.tencentcloudapi.com</code> 时，转为腾讯 AIArt 同步轮询流程</td><td><code>size</code> / <code>quality</code> / <code>response_format</code> 按腾讯支持范围转换；安全命中会返回 OpenAI 风格 <code>moderation_blocked</code></td></tr>
+            <tr><td>OpenAI 兼容渠道</td><td>JSON 请求按 <code>ImageRequest</code> 结构透传，非流式返回统一 image response，流式返回 OpenAI image SSE 事件。</td><td><code>background</code>、<code>moderation</code>、<code>output_format</code>、<code>output_compression</code>、<code>partial_images</code> 等字段是否生效取决于上游模型。DALL-E 2/3 会做基础 <code>size</code> 校验；<code>gpt-image-1</code> / <code>gpt-image-2</code> 会规范化 <code>quality</code>。</td></tr>
+            <tr><td>Azure GPT Image</td><td>按 OpenAI 兼容请求转发。</td><td>当模型为 <code>gpt-image-*</code> 或 <code>chatgpt-image-latest</code> 且请求为生成接口时，网关会删除 <code>response_format</code>；Azure 上游默认返回 base64 图片。</td></tr>
+            <tr><td>Gemini <code>imagen*</code></td><td>转为 Gemini Imagen <code>models/{model}:predict</code>。</td><td><code>prompt</code> 转 <code>instances[0].prompt</code>；<code>n</code> 转 <code>sampleCount</code>；<code>size</code> 转 <code>aspectRatio</code>：<code>1024x1024</code>→<code>1:1</code>、<code>1536x1024</code>→<code>3:2</code>、<code>1024x1536</code>→<code>2:3</code>、<code>1792x1024</code>→<code>16:9</code>、<code>1024x1792</code>→<code>9:16</code>；<code>quality=high/hd/2K</code> 转 <code>imageSize=2K</code>，<code>auto/medium/low/standard/1K</code> 转 <code>1K</code>；<code>response_format</code>、<code>background</code>、<code>moderation</code>、<code>output_format</code>、<code>output_compression</code>、<code>partial_images</code> 不映射。</td></tr>
+            <tr><td>Gemini image-preview：<code>gemini-3-pro-image*</code>、<code>gemini-3.1-flash-image*</code>、<code>gemini-2.5-flash-image</code></td><td>转为 Gemini <code>generateContent</code>，请求包含文本 prompt，并要求 <code>responseModalities=["TEXT","IMAGE"]</code>。</td><td><code>n</code> 转 <code>candidateCount</code>；<code>size</code> 转 <code>imageConfig.aspectRatio</code> 或 <code>imageConfig.imageSize</code>；<code>2048x2048</code> 转 <code>2K</code>，<code>4096x4096</code> 转 <code>4K</code>；<code>quality</code> 转 <code>1K</code> / <code>2K</code> / <code>4K</code>；<code>response_format</code>、<code>background</code>、<code>moderation</code>、<code>output_format</code>、<code>output_compression</code>、<code>partial_images</code> 不映射。这类模型版本默认钉到 <code>v1beta</code>，原生 Gemini <code>/v1beta/...</code> 入口会保留客户端路径版本。</td></tr>
+            <tr><td>腾讯 AIArt</td><td>当 Tencent 渠道 base_url 为 <code>aiart.tencentcloudapi.com</code> 时，转为腾讯 AIArt 同步轮询流程。</td><td>请求主体主要来自 <code>model</code>、<code>prompt</code> 和 <code>extra_fields</code>；安全命中会返回 OpenAI 风格 <code>moderation_blocked</code>。响应默认返回 <code>b64_json</code>，仅 <code>response_format:"url"</code> 返回 URL。</td></tr>
+            <tr><td>MiniMax</td><td>转为 MiniMax 图片生成请求。</td><td><code>size</code> 映射为支持的 <code>aspect_ratio</code>；<code>response_format</code> 规范化为 MiniMax 支持的值；<code>watermark</code> 映射为水印开关；<code>extra_fields.prompt_optimizer</code> 可控制提示词优化。</td></tr>
+            <tr><td>Replicate / 火山 / 即梦等 URL 型渠道</td><td>按各自适配器提交任务或同步请求，再转换为 OpenAI 风格图片响应。</td><td><code>response_format</code> 只在适配器明确支持时生效：Replicate 的 <code>b64_json</code> 会下载 URL 转 base64；即梦默认返回 URL；火山会把 <code>response_format</code> 映射为上游编码参数。</td></tr>
           </tbody>
         </table>
 
@@ -1146,8 +1151,8 @@ for (const model of models.data) {
         <table>
           <thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead>
           <tbody>
-            <tr><td><code>url</code></td><td>string</td><td>图片 URL（response_format 为 url 时）</td></tr>
-            <tr><td><code>b64_json</code></td><td>string</td><td>Base64 编码的图片数据（默认返回）</td></tr>
+            <tr><td><code>url</code></td><td>string</td><td>图片 URL。仅当上游或适配器返回 URL，或 <code>response_format:"url"</code> 被目标渠道支持时出现。</td></tr>
+            <tr><td><code>b64_json</code></td><td>string</td><td>Base64 编码的图片数据。GPT Image、Gemini image-preview、腾讯 AIArt 默认会返回或转换为该字段；其他渠道以适配器说明为准。</td></tr>
             <tr><td><code>revised_prompt</code></td><td>string</td><td>模型改写后的提示词（部分模型支持）</td></tr>
           </tbody>
         </table>
@@ -1195,12 +1200,12 @@ for (const model of models.data) {
     "output_format": "png"
   }'</code></pre>
 
-        <h4>返回 URL 格式</h4>
+        <h4>返回 URL 格式（仅支持 URL 的渠道）</h4>
         <pre><code>curl -X POST {服务器地址}/v1/images/generations \
   -H "Authorization: Bearer sk-你的令牌" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "gpt-image-2",
+    "model": "dall-e-3",
     "prompt": "一张极简风格的办公桌场景图",
     "response_format": "url"
   }'</code></pre>
@@ -1214,45 +1219,75 @@ for (const model of models.data) {
           <span class="badge badge-post">POST</span>
           <code>/v1/images/edits</code>
         </div>
-        <p>基于参考图和可选遮罩编辑图片，兼容 <a href="https://developers.openai.com/api/reference/resources/images/methods/edit" target="_blank" rel="noopener">OpenAI Images Edits API</a>。OpenAI 官方新接口支持 JSON 形式的 <code>images</code> / <code>mask</code> 引用对象；本平台同时兼容传统 <code>multipart/form-data</code> 文件上传。</p>
+        <p>基于一张或多张参考图和提示词编辑、扩展图片。兼容 <a href="https://developers.openai.com/api/reference/resources/images/methods/edit" target="_blank" rel="noopener">OpenAI Images Edits API</a> 的 JSON <code>images</code> / <code>mask</code> 引用对象，同时保留 OpenAI SDK 常用的 <code>multipart/form-data</code> 文件上传形式。</p>
 
         <!-- Image Edits Request -->
-        <h3 id="image-edits-request">请求参数</h3>
+        <h3 id="image-edits-request">请求参数（OpenAI 官方 JSON）</h3>
         <table>
-          <thead><tr><th>参数</th><th>类型</th><th>必填</th><th>说明</th></tr></thead>
+          <thead><tr><th>参数</th><th>类型</th><th>必填</th><th>官方取值 / 结构</th><th>说明</th></tr></thead>
           <tbody>
-            <tr><td><code>images</code></td><td>array&lt;object&gt; | string[]</td><td>JSON 必填</td><td>OpenAI 官方 JSON 形式的输入图片列表，每项可为 <code>{"image_url":"https://..."}</code>、<code>{"image_url":"data:image/...;base64,..."}</code> 或 <code>{"file_id":"file-..."}</code>。GPT Image 官方最多支持 16 张。OpenAI 兼容渠道会透传官方对象数组；Gemini image-preview 转换目前只解析 URL / data URL / base64 的字符串或字符串数组，不解析 <code>file_id</code>，也不解析官方对象数组内的 <code>image_url</code></td></tr>
-            <tr><td><code>image</code></td><td>file | string | string[]</td><td>multipart 必填</td><td>传统上传字段。multipart 可重复传 <code>image</code>、<code>image[]</code> 或 <code>image[0]</code>；JSON 兼容可传 URL、data URL、裸 base64 或字符串数组，主要用于 Gemini image-preview 适配。需要同时兼容 OpenAI 和 Gemini 时，优先使用 multipart 多图上传</td></tr>
-            <tr><td><code>prompt</code></td><td>string</td><td>是</td><td>编辑描述，说明要对图片做什么修改</td></tr>
-            <tr><td><code>mask</code></td><td>file | object | string</td><td>否</td><td>遮罩图片。OpenAI JSON 形式为 <code>{"image_url":"..."}</code> 或 <code>{"file_id":"..."}</code>；multipart 形式为文件。Gemini image-preview 会把 mask 作为额外图片 part 并加提示文本，语义效果以上游模型为准</td></tr>
-            <tr><td><code>model</code></td><td>string</td><td>否</td><td>模型名。OpenAI 官方 edit 支持 <code>gpt-image-1.5</code>、<code>gpt-image-1</code>、<code>gpt-image-1-mini</code>、<code>chatgpt-image-latest</code> 和 <code>dall-e-2</code>；本平台也可把网关模型名路由到 Azure、自建或 Gemini image-preview 渠道</td></tr>
-            <tr><td><code>n</code></td><td>integer</td><td>否</td><td>生成张数，默认 1，按模型支持生效</td></tr>
-            <tr><td><code>size</code></td><td>string</td><td>否</td><td>输出尺寸，如 <code>"auto"</code>、<code>"1024x1024"</code>、<code>"1536x1024"</code>、<code>"1024x1536"</code>；Gemini image-preview 额外支持 <code>2048x2048</code>→<code>2K</code>、<code>4096x4096</code>→<code>4K</code></td></tr>
-            <tr><td><code>quality</code></td><td>string</td><td>否</td><td>质量：<code>"auto"</code> / <code>"high"</code> / <code>"medium"</code> / <code>"low"</code></td></tr>
-            <tr><td><code>background</code></td><td>string</td><td>否</td><td>背景策略：<code>"auto"</code> / <code>"transparent"</code> / <code>"opaque"</code></td></tr>
-            <tr><td><code>input_fidelity</code></td><td>string</td><td>否</td><td>输入图保真度：<code>"high"</code> / <code>"low"</code>，按 OpenAI GPT Image 支持生效</td></tr>
-            <tr><td><code>moderation</code></td><td>string</td><td>否</td><td>内容审核：<code>"auto"</code> / <code>"low"</code>，按 OpenAI GPT Image 支持生效</td></tr>
-            <tr><td><code>output_format</code></td><td>string</td><td>否</td><td>输出格式：<code>"png"</code> / <code>"jpeg"</code> / <code>"webp"</code></td></tr>
-            <tr><td><code>output_compression</code></td><td>integer</td><td>否</td><td>压缩质量 0–100，仅对 <code>jpeg</code> / <code>webp</code> 输出有效</td></tr>
-            <tr><td><code>stream</code></td><td>boolean</td><td>否</td><td>是否流式返回图片编辑事件，需 OpenAI 兼容上游支持</td></tr>
-            <tr><td><code>partial_images</code></td><td>integer</td><td>否</td><td>流式中间图数量，官方范围 0–3，仅 <code>stream:true</code> 时使用</td></tr>
-            <tr><td><code>response_format</code></td><td>string</td><td>否</td><td><code>"url"</code> / <code>"b64_json"</code></td></tr>
-            <tr><td><code>user</code></td><td>string</td><td>否</td><td>终端用户标识，用于审计和风控</td></tr>
+            <tr><td><code>images</code></td><td>array&lt;object&gt;</td><td>是</td><td><code>[{"image_url":"https://..."},{"file_id":"file-..."}]</code></td><td>输入图片引用列表；每项提供 <code>image_url</code> 或 <code>file_id</code>。GPT Image 官方最多支持 16 张。OpenAI 兼容 JSON 请求会按原结构透传。</td></tr>
+            <tr><td><code>prompt</code></td><td>string</td><td>是</td><td>—</td><td>编辑描述，说明要对图片做什么修改。</td></tr>
+            <tr><td><code>background</code></td><td>string</td><td>否</td><td><code>"transparent"</code> / <code>"opaque"</code> / <code>"auto"</code></td><td>生成图背景策略。</td></tr>
+            <tr><td><code>input_fidelity</code></td><td>string</td><td>否</td><td><code>"high"</code> / <code>"low"</code></td><td>控制对输入图的保真度，按 GPT Image 模型支持生效。</td></tr>
+            <tr><td><code>mask</code></td><td>object</td><td>否</td><td><code>{"image_url":"..."}</code> 或 <code>{"file_id":"..."}</code></td><td>遮罩图片引用；官方要求 <code>image_url</code> 与 <code>file_id</code> 二选一。</td></tr>
+            <tr><td><code>model</code></td><td>string</td><td>否</td><td><code>gpt-image-1.5</code> / <code>gpt-image-1</code> / <code>gpt-image-1-mini</code> / <code>chatgpt-image-latest</code></td><td>OpenAI 官方 edit 支持 GPT Image 系列和 <code>dall-e-2</code>；平台也可通过模型映射路由到 Azure、自建或 Gemini image-preview 渠道。</td></tr>
+            <tr><td><code>moderation</code></td><td>string</td><td>否</td><td><code>"low"</code> / <code>"auto"</code></td><td>GPT Image 内容审核强度。</td></tr>
+            <tr><td><code>n</code></td><td>number</td><td>否</td><td>—</td><td>要生成的编辑结果数量，实际限制按模型/渠道支持生效。</td></tr>
+            <tr><td><code>output_compression</code></td><td>number</td><td>否</td><td>0–100</td><td><code>jpeg</code> / <code>webp</code> 输出压缩级别。</td></tr>
+            <tr><td><code>output_format</code></td><td>string</td><td>否</td><td><code>"png"</code> / <code>"jpeg"</code> / <code>"webp"</code></td><td>GPT Image 输出格式。</td></tr>
+            <tr><td><code>partial_images</code></td><td>number</td><td>否</td><td>0–3</td><td>流式响应中的中间图数量，仅 <code>stream:true</code> 时使用；设为 0 时只在一个流式事件中发送最终图。</td></tr>
+            <tr><td><code>quality</code></td><td>string</td><td>否</td><td><code>"low"</code> / <code>"medium"</code> / <code>"high"</code> / <code>"auto"</code></td><td>GPT Image 输出质量。</td></tr>
+            <tr><td><code>size</code></td><td>string</td><td>否</td><td><code>"auto"</code> / <code>"1024x1024"</code> / <code>"1536x1024"</code> / <code>"1024x1536"</code></td><td>OpenAI 官方输出尺寸。其他渠道可能支持额外尺寸，见下方 Gemini 映射。</td></tr>
+            <tr><td><code>stream</code></td><td>boolean</td><td>否</td><td><code>true</code> / <code>false</code></td><td>是否以 SSE 事件流返回中间图和完成事件。</td></tr>
+            <tr><td><code>user</code></td><td>string</td><td>否</td><td>—</td><td>终端用户标识，用于上游风控和审计。</td></tr>
           </tbody>
         </table>
 
-        <div class="callout">
-          <strong>实现说明：</strong>OpenAI 渠道的 JSON 图片编辑请求会按 JSON 透传；multipart 请求会重新组装，兼容 <code>image</code>、<code>image[]</code> 和 <code>image[n]</code> 多图字段。Gemini image-preview 编辑请求会被转为 Gemini <code>generateContent</code>：prompt 变成文本 part，输入图和 mask 会下载或解码成 <code>inlineData</code> 图片 part，并设置 <code>responseModalities=["TEXT","IMAGE"]</code>。Gemini JSON 适配推荐使用 <code>{"image":"https://..."}</code> 或 <code>{"images":["https://...","data:image/..."]}</code> 这类字符串形式。
+        <h4>网关兼容字段（multipart / 历史 OpenAI SDK）</h4>
+        <table>
+          <thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td><code>image</code></td><td>file | string | string[]</td><td>multipart 上传字段；可重复传 <code>image</code>、<code>image[]</code> 或 <code>image[0]</code>。OpenAI 渠道会重组 multipart 后转发；Gemini image-preview 会把图片读为 <code>inlineData</code>。</td></tr>
+            <tr><td><code>mask</code></td><td>file | string</td><td>multipart 可上传遮罩文件；Gemini image-preview 会把 mask 作为额外图片 part，并在前面插入提示文本 <code>Use the next image as the edit mask.</code>。JSON 字符串形式主要用于 Gemini 适配。</td></tr>
+            <tr><td><code>response_format</code></td><td>string</td><td><code>"url"</code> / <code>"b64_json"</code>。这不是当前 OpenAI Image Edit 官方 JSON 参数，是网关为历史 OpenAI SDK、DALL-E 2 和部分非 OpenAI 渠道保留的兼容字段。OpenAI 兼容渠道会透传；GPT Image 官方不支持 URL 输出，Azure GPT Image edit 未做自动删除，传错可能被上游拒绝；Gemini image-preview 当前不映射。</td></tr>
+            <tr><td><code>image</code> / <code>images</code> JSON 字符串</td><td>string | string[]</td><td>平台扩展：JSON 中可传 URL、data URL 或裸 base64 字符串，主要给 Gemini image-preview 使用。该形式不是 OpenAI 官方 JSON schema。</td></tr>
+          </tbody>
+        </table>
+
+        <div class="callout warning">
+          <strong>兼容边界：</strong>OpenAI 渠道的 JSON edit 请求会按 JSON 透传，官方 <code>images[].image_url</code>、<code>images[].file_id</code>、<code>mask.image_url</code>、<code>mask.file_id</code> 由上游处理。Gemini image-preview 当前不会解析官方对象数组里的 <code>image_url</code> / <code>file_id</code>，也不会调用 OpenAI File API；如果要走 Gemini，请使用 multipart 文件上传，或使用平台扩展的 JSON 字符串：<code>{"image":"https://..."}</code>、<code>{"images":["https://...","data:image/..."]}</code>、<code>{"mask":"data:image/..."}</code>。
         </div>
+
+        <h4>Gemini image-preview 映射</h4>
+        <table>
+          <thead><tr><th>OpenAI Images Edits 字段</th><th>Gemini 请求映射</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td><code>model</code></td><td><code>gemini-3-pro-image*</code> / <code>gemini-3.1-flash-image*</code> / <code>gemini-2.5-flash-image</code> 走 Gemini <code>generateContent</code></td><td>这些 image-preview 模型默认使用 <code>v1beta</code>；原生 Gemini <code>/v1beta/...</code> 入口会保留客户端路径版本。</td></tr>
+            <tr><td><code>prompt</code></td><td>第一个 text part</td><td>不能为空；如果没有任何文本或图片 part，会返回参数错误。</td></tr>
+            <tr><td>multipart <code>image</code> / <code>image[]</code></td><td><code>contents[0].parts[].inlineData</code></td><td>支持多图；会根据文件 Content-Type 或内容探测 MIME。</td></tr>
+            <tr><td>JSON <code>image</code> / <code>images</code> 字符串</td><td>下载 URL 或解码 base64 后转为 <code>inlineData</code></td><td>支持 <code>http(s)</code> URL、data URL、裸 base64；URL 下载失败会返回错误。</td></tr>
+            <tr><td><code>mask</code></td><td>额外 text part + <code>inlineData</code></td><td>mask 不是 Gemini 原生强约束遮罩参数，而是以图片 part 加提示词交给模型理解，效果以上游模型为准。</td></tr>
+            <tr><td><code>n</code></td><td><code>generationConfig.candidateCount</code></td><td>仅当 <code>n &gt; 0</code> 时设置。</td></tr>
+            <tr><td><code>size</code></td><td><code>generationConfig.imageConfig.aspectRatio</code> 或 <code>imageSize</code></td><td><code>1536x1024</code>→<code>3:2</code>，<code>1024x1536</code>→<code>2:3</code>，<code>1024x1792</code>→<code>9:16</code>，<code>1792x1024</code>→<code>16:9</code>；<code>2048x2048</code>→<code>2K</code>，<code>4096x4096</code>→<code>4K</code>；若直接传 <code>16:9</code> 这类比例字符串也会作为 <code>aspectRatio</code> 透传。</td></tr>
+            <tr><td><code>quality</code></td><td><code>generationConfig.imageConfig.imageSize</code></td><td><code>high</code> / <code>hd</code> / <code>2k</code>→<code>2K</code>，<code>4k</code>→<code>4K</code>，<code>standard</code> / <code>medium</code> / <code>low</code> / <code>auto</code> / <code>1k</code>→<code>1K</code>。</td></tr>
+            <tr><td><code>background</code>、<code>input_fidelity</code>、<code>moderation</code>、<code>output_format</code>、<code>output_compression</code>、<code>partial_images</code>、<code>response_format</code></td><td>当前 Gemini 转换不映射</td><td>这些字段会被 DTO 接收，但 Gemini image-preview 适配器不会写入 Gemini 请求；实际输出格式、审核和背景由 Gemini 上游决定。</td></tr>
+          </tbody>
+        </table>
 
         <!-- Image Edits Response -->
         <h3 id="image-edits-response">响应格式</h3>
-        <p>与 Image Generation 返回结构一致，<code>data</code> 数组中每项包含生成的编辑后图片：</p>
+        <p>与 Image Generation 返回结构一致，<code>data</code> 数组中每项包含生成的编辑后图片。OpenAI GPT Image 可能额外返回顶层生成参数和 usage：</p>
         <table>
           <thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead>
           <tbody>
             <tr><td><code>created</code></td><td>integer</td><td>Unix 时间戳</td></tr>
+            <tr><td><code>background</code></td><td>string</td><td>OpenAI GPT Image 可能返回实际背景策略：<code>"transparent"</code> / <code>"opaque"</code></td></tr>
             <tr><td><code>data</code></td><td>ImageData[]</td><td>编辑后的图片数组</td></tr>
+            <tr><td><code>output_format</code></td><td>string</td><td>OpenAI GPT Image 可能返回实际输出格式：<code>"png"</code> / <code>"webp"</code> / <code>"jpeg"</code></td></tr>
+            <tr><td><code>quality</code></td><td>string</td><td>OpenAI GPT Image 可能返回实际质量档位：<code>"low"</code> / <code>"medium"</code> / <code>"high"</code></td></tr>
+            <tr><td><code>size</code></td><td>string</td><td>OpenAI GPT Image 可能返回实际尺寸：<code>"1024x1024"</code> / <code>"1024x1536"</code> / <code>"1536x1024"</code></td></tr>
+            <tr><td><code>usage</code></td><td>object</td><td>GPT Image 可能返回图片生成用量，含 <code>input_tokens</code>、<code>output_tokens</code>、<code>total_tokens</code>、<code>input_tokens_details.image_tokens/text_tokens</code>、<code>output_tokens_details.image_tokens/text_tokens</code></td></tr>
           </tbody>
         </table>
 
@@ -1260,9 +1295,9 @@ for (const model of models.data) {
         <table>
           <thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead>
           <tbody>
-            <tr><td><code>url</code></td><td>string</td><td>图片 URL（传 <code>response_format:"url"</code> 时）</td></tr>
-            <tr><td><code>b64_json</code></td><td>string</td><td>Base64 编码的图片数据（默认返回）</td></tr>
-            <tr><td><code>revised_prompt</code></td><td>string</td><td>模型改写后的提示词（部分模型支持）</td></tr>
+            <tr><td><code>b64_json</code></td><td>string</td><td>Base64 编码的图片数据。GPT Image 通常返回该字段；DALL-E 2 或部分兼容渠道在 <code>response_format:"b64_json"</code> 时返回。</td></tr>
+            <tr><td><code>revised_prompt</code></td><td>string</td><td>模型改写后的提示词；主要是 DALL-E 3 返回。</td></tr>
+            <tr><td><code>url</code></td><td>string</td><td>DALL-E 2 或部分兼容渠道在 <code>response_format:"url"</code> 时返回；GPT Image 官方不支持 URL 输出。</td></tr>
           </tbody>
         </table>
 
@@ -1275,7 +1310,7 @@ for (const model of models.data) {
 
         <h3 id="image-edits-examples">调用示例</h3>
 
-        <h4>JSON 编辑：URL 图片引用</h4>
+        <h4>官方 JSON 编辑：URL 图片引用</h4>
         <pre><code>curl -X POST {服务器地址}/v1/images/edits \
   -H "Authorization: Bearer sk-你的令牌" \
   -H "Content-Type: application/json" \
@@ -1286,15 +1321,20 @@ for (const model of models.data) {
     ],
     "prompt": "将图片调整为水彩插画风格",
     "background": "transparent",
+    "moderation": "auto",
+    "n": 1,
+    "output_compression": 100,
     "output_format": "png",
+    "partial_images": 1,
     "quality": "high",
-    "size": "1024x1024"
+    "size": "1024x1024",
+    "user": "user-1234"
   }'</code></pre>
 
         <h4>基础编辑：参考图 + 提示词（multipart）</h4>
         <pre><code>curl -X POST {服务器地址}/v1/images/edits \
   -H "Authorization: Bearer sk-你的令牌" \
-  -F "model=gpt-image-2" \
+  -F "model=gpt-image-1.5" \
   -F "prompt=把图片中的杯子改成透明玻璃杯，保持背景不变" \
   -F "image=@./input.png" \
   -F "size=1024x1024" \
@@ -1303,17 +1343,44 @@ for (const model of models.data) {
         <h4>局部编辑：参考图 + 遮罩</h4>
         <pre><code>curl -X POST {服务器地址}/v1/images/edits \
   -H "Authorization: Bearer sk-你的令牌" \
-  -F "model=gpt-image-2" \
+  -F "model=gpt-image-1.5" \
   -F "prompt=在遮罩区域添加一只金色的手表" \
   -F "image=@./background.png" \
   -F "mask=@./mask.png" \
   -F "size=1024x1024" \
   -F "n=1"</code></pre>
 
-        <h4>多图编辑 + 返回 URL</h4>
+        <h4>多图编辑（multipart）</h4>
         <pre><code>curl -X POST {服务器地址}/v1/images/edits \
   -H "Authorization: Bearer sk-你的令牌" \
-  -F "model=gpt-image-2" \
+  -F "model=gpt-image-1.5" \
+  -F "prompt=将四个商品组合成一个礼盒产品图" \
+  -F "image[]=@./body-lotion.png" \
+  -F "image[]=@./bath-bomb.png" \
+  -F "image[]=@./incense-kit.png" \
+  -F "image[]=@./soap.png" \
+  -F "size=1024x1024"</code></pre>
+
+        <h4>Gemini image-preview：JSON 字符串图片</h4>
+        <pre><code>curl -X POST {服务器地址}/v1/images/edits \
+  -H "Authorization: Bearer sk-你的令牌" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gemini-2.5-flash-image",
+    "prompt": "保留人物姿态，将背景改为干净的工作室棚拍背景",
+    "images": [
+      "https://example.com/source.png",
+      "data:image/png;base64,iVBORw0KGgo..."
+    ],
+    "size": "1536x1024",
+    "quality": "high",
+    "n": 1
+  }'</code></pre>
+
+        <h4>兼容字段：DALL-E 2 返回 URL</h4>
+        <pre><code>curl -X POST {服务器地址}/v1/images/edits \
+  -H "Authorization: Bearer sk-你的令牌" \
+  -F "model=dall-e-2" \
   -F "prompt=将产品从白色背景改为浅蓝色渐变背景" \
   -F "image=@./product.png" \
   -F "size=1024x1024" \
@@ -1323,7 +1390,7 @@ for (const model of models.data) {
         <h4>多参考图（重复 image 字段）</h4>
         <pre><code>curl -X POST {服务器地址}/v1/images/edits \
   -H "Authorization: Bearer sk-你的令牌" \
-  -F "model=gpt-image-2" \
+  -F "model=gpt-image-1.5" \
   -F "prompt=融合两张参考图的风格，生成一张新的产品图" \
   -F "image=@./ref1.png" \
   -F "image=@./ref2.png" \
@@ -1339,7 +1406,7 @@ const client = new OpenAI({
 });
 
 const image = await client.images.edit({
-  model: "gpt-image-2",
+  model: "gpt-image-1.5",
   image: fs.createReadStream("input.png"),
   mask: fs.createReadStream("mask.png"),
   prompt: "把图中的杯子改成透明玻璃杯",
@@ -1358,7 +1425,7 @@ client = OpenAI(
 )
 
 result = client.images.edit(
-    model="gpt-image-2",
+    model="gpt-image-1.5",
     image=open("input.png", "rb"),
     mask=open("mask.png", "rb"),
     prompt="把图中的杯子改成透明玻璃杯",
@@ -1653,8 +1720,8 @@ for chunk in stream:
             </tr>
             <tr>
               <td>图片返回 <code>b64_json</code> 非 URL</td>
-              <td>默认返回 base64</td>
-              <td>客户端兼容 base64；如模型支持可传 <code>response_format: "url"</code></td>
+              <td>目标模型或适配器默认返回 base64，或不支持 URL 输出</td>
+              <td>客户端兼容 base64；仅在目标渠道明确支持 URL 时再传 <code>response_format: "url"</code></td>
             </tr>
             <tr>
               <td>请求超时</td>
