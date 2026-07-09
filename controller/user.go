@@ -141,6 +141,11 @@ func setupLogin(user *model.User, c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgUserSessionSaveFailed)
 		return
 	}
+	if common.SessionCookieDomain != "" {
+		// Fy-api overlay: clear pre-migration host-only session cookies so the
+		// browser cannot send a stale session before the shared-domain cookie.
+		common.ClearLegacyHostOnlySessionCookie(c.Writer)
+	}
 	recordLoginAudit(user, c)
 	c.JSON(http.StatusOK, gin.H{
 		"message": "",
