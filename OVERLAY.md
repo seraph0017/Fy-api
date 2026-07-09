@@ -599,9 +599,10 @@
 - **修改文件**：`web/classic/src/App.jsx`
   - 第 ~59 行：`const FyApiDocs = lazy(() => import('./pages/FyApiDocs'));`
   - 第 ~365 行：`<Route path='/docs' element={<Suspense>...</Suspense>} />`
+- **修改文件**：`router/web-router.go`（`// Fy-api overlay:`：服务端直接把 `/docs`、`/docs/`、`/docs/api-reference.html` 映射到 `product-docs/api-reference.html`，让 `/docs` 成为 canonical 文档地址，避免直连时只返回 SPA shell）
 - **修改文件**：`web/classic/src/components/layout/PageLayout.jsx`（`/docs` 路径使用 early return 跳过 Header/Footer 包装，作为独立页面渲染）
-- **冲突风险**：低（App.jsx 两处小改，Suspense pattern 和 upstream 一致；PageLayout.jsx 只新增 `isDocsRoute` 检查 + early return）
-- **注意**：物理目录必须是 `product-docs/` 而不是 `docs/`，否则与 SPA 路由 `/docs` 冲突（static 中间件 301 到尾斜杠，前端路由再 301 去掉斜杠 → 死循环）。产品文档内图片路径全部用绝对路径 `/product-docs/images/...`。
+- **冲突风险**：低（App.jsx 两处小改，Suspense pattern 和 upstream 一致；PageLayout.jsx 只新增 `isDocsRoute` 检查 + early return；web router 只新增 3 个显式 GET 路由）
+- **注意**：物理目录必须保留为 `product-docs/`，`/docs` 只作为服务端 canonical 入口和兼容路由。产品文档内图片路径全部用绝对路径 `/product-docs/images/...`。
 
 ### F-5 [csv-export] 日志页 "导出 CSV" 按钮
 - **新增文件**：`web/classic/src/components/table/usage-logs/UsageLogsExportButton.jsx`
