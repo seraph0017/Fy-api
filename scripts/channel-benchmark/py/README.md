@@ -1,217 +1,170 @@
-# Fy-api channel QA — Python tools
+# Fy-api channel QA
 
-Python tools sharing one package, one venv, one JSONL schema:
-
-| Tool | Command | Purpose |
-|---|---|---|
-| `fy_loadtest` | `fy-loadtest` | Concurrency-ramp load testing. Hits one channel at 1→N in-flight and reports latency/throughput per level. |
-| `fy_poc_loadtest` | `fy-poc-loadtest` | POC-style LLM performance validation based on `bugs/POC压测方法.docx`: short/medium/long input scenarios across 1/10/20/30/40/50/64/80/128/256 concurrency, with report-template fields. |
-| `fy_quality`  | `fy-quality`  | Quality scorecard. Runs a golden JSONL suite against N channels, grades each output (exact / regex / contains / json-schema / LLM-rubric / similarity / pairwise), emits a scoring matrix. |
-| `fy_canary`   | `fy-canary`   | Model-substitution detection. Records a trusted baseline, then audits a suspect channel for divergence via alignment-template similarity, embedding drift, and (optional) MMD two-sample test. |
-
-The Go smoke tool in `../go/` is the first layer (liveness + TTFT per channel); these three Python tools extend it.
-
-## Install
-
-Python 3.11+ required.
+日常入口只需要一个配置文件和一个命令：
 
 ```bash
-cd scripts/channel-benchmark/py
-uv venv --python 3.13 .venv
-uv pip install --python .venv/bin/python -e .          # base: loadtest + quality + canary (no MMD)
-uv pip install --python .venv/bin/python -e ".[canary]"  # adds MMD via model-equality-testing (pulls torch, ~1.5GB)
-uv pip install --python .venv/bin/python -e ".[dev]"     # pytest for running the suite
-source .venv/bin/activate
+cd scripts/channel-benchmark
+./install-env.sh --with-dev --with-tiktoken
+source py/.venv/bin/activate
+
+cd py
+cp benchmark.yaml benchmark.local.yaml
+fy-benchmark -c benchmark.local.yaml --dry-run
+fy-benchmark -c benchmark.local.yaml
 ```
 
-## fy-loadtest — concurrency-ramp load testing
+`benchmark.local.yaml` 里通常只改：
 
-```bash
-export FY_API_URL=http://localhost:3000
-export FY_API_USER_TOKEN=sk-...
+- `gateway.base_url`: `cn-test` 或 `hk-test`
+- `gateway.tokens.user`: admin 用户的 `sk-...`，用于真实测试流量和 channel pin
+- `target.channel_id`: 目标渠道 ID
+- `target.models`: 要测的模型列表，每个模型声明 `type: text|image|video`
+- `profile.mode`: `quick|standard|strict|deep`
+- 可选 `target.baseline_channel_id`: 有可信对照渠道时启用 canary
 
-fy-loadtest -c loadtest.yaml
-fy-loadtest -c loadtest.yaml --concurrencies 1,5,25 --reps 20
-fy-loadtest -c loadtest.yaml --dry-run
+`fy-benchmark` 会自动为底层模块生成临时配置，严格按模型串行执行，并把结果写入一个 run 目录。
+
+## 目录结构
+
+```text
+scripts/channel-benchmark/
+├── install-env.sh                 一键安装 Python 环境和轻量 fixtures
+├── README.md                      顶层说明：如何跑完整渠道测试
+├── RUNBOOK-channel-benchmark.md   运维/测试执行手册
+├── fixtures/                      小型固定素材：图片、音频、视频、mask/source
+├── incidents/                     已知事故和对应回归用例索引
+└── py/
+    ├── benchmark.yaml             用户入口配置模板；复制为 benchmark.local.yaml
+    ├── fy_benchmark/              统一编排器：生成子配置、串行执行、汇总报告
+    ├── fy_smoke/                  连通性、TTFT、E2E、usage、Prometheus exporter
+    ├── fy_loadtest/               文本并发压测
+    ├── fy_quality/                文本质量评测；默认 deterministic graders
+    ├── fy_conformance/            文本协议兼容、4xx/5xx、错误泄漏检查
+    ├── fy_integrity/              注水、缓存、确定性、流式、tool-use、过滤检查
+    ├── fy_canary/                 文本模型替换/漂移检测
+    ├── fy_image_loadtest/         图片生成压测
+    ├── fy_image_conformance/      图片协议、输出、安全、性能检查
+    ├── fy_image_canary/           图片真实性/指纹检测
+    ├── fy_score/                  A/B/C/D/F 统一评分器
+    ├── tests*/                    各模块离线测试
+    └── benchmark-runs/            默认运行输出目录；每次执行一个时间戳子目录
 ```
 
-Outputs JSON, CSV, and markdown summary per concurrency level.
-Metrics: E2E / TTFT / ITL / TPOT percentiles, RPS, aggregate tok/s, goodput vs SLO.
+`smoke.yaml`、`loadtest.yaml`、`quality.yaml` 等旧模板仍保留，用于调试单个模块；普通完整测试不要直接维护这些文件。
 
-## fy-poc-loadtest — POC report-template performance validation
+## 输出结构
 
-This runner follows the customer-supplied templates in `bugs/`:
+一次 `fy-benchmark` 会生成类似：
 
-- scenarios: 短文本（23 tokens）、中文本（1k tokens）、长文本（7k tokens）
-- concurrency: `1,10,20,30,40,50,64,80,128,256`
-- default request counts: `1=>50`, `10=>100`, `20/30/40=>200`, `50/64=>250`, `80=>300`, `128=>350`, else `500`
-- metrics: TTFT, Latency, TPOT, tokens/s, request success rate
-- reports: JSON, CSV, and Markdown structured like `bugs/报告模板.docx`
-
-```bash
-export FY_API_URL=https://api-test.tracenex.cn
-export FY_API_USER_TOKEN=sk-...
-
-fy-poc-loadtest -c poc-loadtest.yaml
-fy-poc-loadtest -c poc-loadtest.yaml --model deepseek-r1 --concurrencies 1,10,20
-fy-poc-loadtest -c poc-loadtest.yaml --dry-run
+```text
+benchmark-runs/20260705T030627Z-ch42/
+├── manifest.json                  本次目标、模型、计划步骤
+├── run-summary.md                 每个模块耗时、退出码、日志路径
+├── run-summary.json               机器可读执行摘要
+├── configs/                       自动生成的底层模块 YAML
+├── logs/                          每个模块 stdout/stderr，排查慢点看这里
+├── smoke-results/
+├── loadtest-results/
+├── quality-results/
+├── conformance-results/
+├── integrity-results/
+├── canary-results/
+├── image-loadtest-results/
+├── image-conformance-results/
+├── image-canary-results/
+└── reports/
+    ├── scorecard.json
+    └── scorecard.md
 ```
 
-Before a real customer run, copy `poc-loadtest.yaml` to a local file and replace the medium/long scenario prompts with customer-approved 1k/7k token samples. Keep private datasets out of git.
+`logs/` 记录每个模块耗时和原始输出；如果你要判断慢在 agent、脚本还是渠道，上这里看每个模块的 wall time。
 
-## fy-quality — quality scorecard
+## 示例
 
-```bash
-export FY_TOKEN_OPENAI=sk-...          # token for channel 1
-export FY_TOKEN_ANTHROPIC=sk-...
-export ANTHROPIC_API_KEY=sk-ant-...    # judge 1
-export GEMINI_API_KEY=...              # judge 2
-export OPENAI_API_KEY=sk-...           # embeddings for similarity grader
+文本渠道标准测试：
 
-fy-quality -c quality.yaml
+```yaml
+gateway:
+  base_url: "https://api-test.tracenex.cn"
+  tokens:
+    user: "${FY_API_USER_TOKEN}"
+target:
+  channel_id: 42
+  models:
+    - id: "deepseek-r1"
+      type: text
+      backend: openai
+profile:
+  mode: standard
 ```
 
-Graders:
+多模型串行测试：
 
-| Grader | When to use | Notes |
-|---|---|---|
-| `exact` | Unambiguous one-token answers (math, facts) | Strips surrounding quotes / whitespace |
-| `regex` | Structural format checks ("three words", "N.NN decimal") | Python `re.search` semantics |
-| `contains` | "Must mention X" — case-insensitive | Good for loose factual checks |
-| `json_schema` | Structured-output tests | Minimal JSON Schema subset: type, required, const, enum, additionalProperties |
-| `rubric` | Open-ended answers | **Dual-judge mode** by default: both judges must score ≥ `pass_score` (1-5) |
-| `similarity` | Paraphrases, translations | Embedding cosine ≥ `similarity_threshold` |
-| `pairwise` | A vs B head-to-head | Runs both orderings, ties-count-as-passing |
-
-Dual-judge defaults to Claude Haiku + Gemini Flash. Never configure a channel's own model as a judge.
-
-Output: JSON + CSV + a markdown scorecard with per-channel pass rate, per-category breakdown, and a failures table.
-
-### Dataset layout (contamination defense)
-
-```
-fy_quality/datasets/
-├── README.md                which to use when, and which perturbations are safe per grader
-├── public/quality.jsonl     15-row starter suite. COMMITTED. Assume every model has seen it.
-└── private/                 YOUR real grading prompts. Gitignored. Back up out-of-band.
+```yaml
+target:
+  channel_id: 42
+  models:
+    - {id: "deepseek-r1", type: text, backend: openai}
+    - {id: "qwen3-max", type: text, backend: openai}
+profile:
+  mode: strict
+  parallel_models: 1
 ```
 
-Every row can opt into deterministic on-the-wire perturbations via `seed` + `perturbations`:
+图片模型：
 
-```json
-{"id":"math-01","kind":"quality","grader":"exact",
- "prompt":"What is 17 + 28?", "expected":"45",
- "seed": 42, "perturbations": ["whitespace", "trailing_marker"]}
+```yaml
+target:
+  channel_id: 88
+  models:
+    - {id: "gpt-image-1", type: image}
+profile:
+  mode: standard
 ```
 
-Strategies (from `fy_quality/perturbation.py`):
+有 baseline 的 strict/canary：
 
-| Strategy | What it does | Safe for |
-|---|---|---|
-| `whitespace` | Inserts one U+200B zero-width-space at a hash-derived index between two letters | Every grader |
-| `trailing_marker` | Appends ` <!--fqNNNNNN-->` where the 6-digit nonce is deterministic on `(seed, prompt_id)` | Every grader |
-| `synonym` | Swaps the first whole-word hit against a reviewed 10-word map, preserving case + trailing punctuation | rubric / similarity / pairwise (only — on exact/regex double-check manually) |
-
-Perturbations are deterministic, so disk cache keys stay stable. Schema changes (different seed or different strategy list) naturally invalidate the cache because the wire text changes.
-
-## fy-canary — model-substitution detection
-
-Three-step workflow:
-
-```bash
-# 1. Record a trusted baseline (point at the vendor API directly).
-export CANARY_BASE_URL=https://api.openai.com
-export CANARY_API_KEY=sk-...
-fy-canary baseline -c canary.yaml
-
-# 2. Audit the suspect channel (point at the Fy-api gateway).
-export CANARY_BASE_URL=https://your-fy-api.example.com
-export CANARY_API_KEY=sk-user-on-fyapi
-fy-canary audit -c canary.yaml
-
-# 3. Periodically verify the baseline itself hasn't drifted (re-query vendor direct).
-export CANARY_BASE_URL=https://api.openai.com
-export CANARY_API_KEY=sk-...
-fy-canary verify-baseline -c canary.yaml
+```yaml
+target:
+  channel_id: 42
+  baseline_channel_id: 12
+  models:
+    - {id: "claude-sonnet-4-6", type: text, backend: claude}
+profile:
+  mode: strict
+modules:
+  canary: true
+embedding:
+  enabled: true
+  model: "text-embedding-v1"
+gateway:
+  tokens:
+    user: "${FY_API_USER_TOKEN}"
+    embedding: "${FY_API_EMBEDDING_TOKEN}"
 ```
 
-Probes:
+## 模式
 
-| Method | What it catches | Cost per probe | Config |
-|---|---|---|---|
-| `alignment` | Cross-family substitutions (GPT→Claude etc.) via refusal-template drift | 1 request | Always on |
-| `drift` | Within-family substitutions via output-embedding centroid cosine | N requests + N embeddings | Requires `embedding:` block in config |
-| `mmd` | Quantization / distillation via MMD+Hamming+permutation p-value | N requests per prompt, ~10 is enough per Gao et al. | `mmd_enabled: true` + `pip install -e .[canary]` |
+- `quick`: 快速排障，少量 smoke/load/conformance/integrity/quality。
+- `standard`: 默认验收，覆盖常见性能、质量、协议和诚信问题。
+- `strict`: 高标准审计，压测更重、阈值更严，报告会更突出短板。
+- `deep`: 昂贵完整检查；适合已配置 judge、embedding、baseline 后做供应商终验。
 
-Baselines are per-`source.name` JSON files in `canary-baselines/`. Keep that dir tracked manually or gitignored as you prefer — they shouldn't contain secrets but they DO contain model outputs.
+默认 `quality` 不启用 LLM judge，只跑 deterministic graders。差异是：结果更稳定、成本更低、不会受 judge 延迟影响，但开放式回答、语义相似度和主观质量只能得到较弱覆盖；需要这些能力时再显式开启 `judge.enabled` 或 `embedding.enabled`。
 
-### Baseline health checks
+## 底层 CLI
 
-Every baseline file carries v2 metadata:
+底层工具仍可单独使用：
 
-- `schema_version` — always 2 on new saves; v1 files still load
-- `recorded_at_iso` — human-readable timestamp
-- `n_probes` / `total_samples` — the audit sizes this was calibrated for
-- `fy_canary_version` — the tool version that wrote it
+- `fy-smoke`
+- `fy-loadtest`
+- `fy-quality`
+- `fy-conformance`
+- `fy-integrity`
+- `fy-canary`
+- `fy-image-loadtest`
+- `fy-image-conformance`
+- `fy-image-canary`
+- `fy-score`
 
-`fy-canary audit` refuses to run against a baseline older than `baseline_max_age_days` (default 30) unless you pass `--ignore-stale-baseline`. That threshold lives in `canary.yaml`.
-
-`fy-canary verify-baseline` is the audit flipped: it re-queries the SAME source the baseline was recorded from and runs the exact alignment/drift comparison. A failure there means the vendor itself has changed (model updated, system prompt tweaked, API migrated) and the baseline needs to be re-recorded before its next audit run makes sense.
-
-## Shared JSONL dataset schema
-
-Both `fy-quality` and `fy-canary` read the same flavor of JSONL. Each row:
-
-```json
-{"id": "...", "kind": "quality" | "canary", "prompt": "...", "..."}
-```
-
-See `fy_quality/datasets/public/quality.jsonl` (15 starter prompts) and
-`fy_canary/datasets/canaries.jsonl` (8 starter probes).
-
-## Design choices worth calling out
-
-- **Three CLIs, one package.** `pip install -e .` gives you all three; `[canary]` is the only weight-bearing extra.
-- **Judge isolation.** Judges are configured independently from the channels under test — the code cannot accidentally have a channel judge its own output.
-- **Dual-judge rubric.** Two judges must BOTH score ≥ pass_score. Cuts false-positives at the cost of 2× judge spend.
-- **Position-randomized pairwise.** A-vs-B and B-vs-A are both asked; a flip counts as a tie.
-- **Disk cache for quality generations.** Re-running the suite after a grader tweak is near-free.
-- **Baseline-first canary.** The real test is "did outputs diverge from what this channel used to produce?" — you can't detect that without recording a trusted snapshot first.
-- **Channel pinning is opt-in across all four tools.** Each tool's config has a
-  `pin_channel_id` field (gateway-level for loadtest/conformance, per-channel
-  for quality, per-source for canary). When set, the tool appends
-  `-{channel_id}` to the user token, and Fy-api parses this in
-  `middleware/auth.go` (~line 431) as a forced channel selection. Required
-  to be admin's user token, otherwise the gateway 403s with "普通用户不支持
-  指定渠道". Without it, requests go through the normal distributor (group +
-  priority + weight + affinity), which can route a model offered by N
-  channels to one you didn't intend to test. Mirrors `go/`'s `pin_channel`
-  flag.
-- **No CI integration, no scheduler.** These are manual runs. When you want a scheduler, wire one yourself.
-
-## Testing
-
-```bash
-pytest
-```
-
-83 end-to-end tests using `httpx.MockTransport` — no network. Covers:
-
-- fy_loadtest: TTFT-skip-preamble, usage harvesting, ramp, auth contract, channel-pin token suffix
-- fy_quality: each grader's happy path and failure modes, dataset loader,
-  full runner with mock upstream, dual-judge verdict composition,
-  deterministic perturbations, runner-sends-perturbed-prompt, unknown-strategy errors,
-  channel-pin runner + config round-trip
-- fy_canary: Levenshtein, drift centroid, baseline v2 metadata + v1 backwards-compat,
-  substitution detection, baseline-health staleness, verify-baseline source-drift,
-  channel-pin client + config round-trip
-- fy_conformance: dataset loader, runner with mock gateway, leak-guards corpus,
-  channel-pin runner + config round-trip
-
-## Not in scope (yet)
-
-- LLM-as-judge judge-of-judges calibration
-- Automatic baseline rotation / drift detection on the baseline itself
-  (you have `verify-baseline` but re-recording is still manual)
-- Distributed load generation
-- Any CI hooks
+这些命令主要用于复现单个失败模块，或做 Prometheus exporter、POC 专项压测等非完整套件场景。

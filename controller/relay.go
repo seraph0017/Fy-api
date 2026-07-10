@@ -394,6 +394,7 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 			adminInfo["multi_key_index"] = common.GetContextKeyInt(c, constant.ContextKeyChannelMultiKeyIndex)
 		}
 		service.AppendChannelAffinityAdminInfo(c, adminInfo)
+		appendNewAPIErrorMetadataToAdminInfo(err, adminInfo)
 		other["admin_info"] = adminInfo
 		startTime := common.GetContextKeyTime(c, constant.ContextKeyRequestStartTime)
 		if startTime.IsZero() {
@@ -403,6 +404,21 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 		model.RecordErrorLog(c, userId, channelId, modelName, tokenName, err.MaskSensitiveErrorWithStatusCode(), tokenId, useTimeSeconds, common.GetContextKeyBool(c, constant.ContextKeyIsStream), userGroup, other)
 	}
 
+}
+
+func appendNewAPIErrorMetadataToAdminInfo(err *types.NewAPIError, adminInfo map[string]interface{}) {
+	if err == nil || adminInfo == nil || len(err.Metadata) == 0 {
+		return
+	}
+	var metadata map[string]interface{}
+	if unmarshalErr := common.Unmarshal(err.Metadata, &metadata); unmarshalErr != nil {
+		return
+	}
+	// Fy-api overlay: keep curated upstream diagnostics admin-only. RelayErrorHandler
+	// already sanitizes header names and truncates the response body preview.
+	if upstreamDebug, ok := metadata["upstream_debug"]; ok {
+		adminInfo["upstream_debug"] = upstreamDebug
+	}
 }
 
 func RelayMidjourney(c *gin.Context) {

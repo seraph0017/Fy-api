@@ -177,7 +177,7 @@ ls results/cache-affinity/
 ## 注意事项
 
 1. **组间间隔** — 组与组之间建议等待 2-3 分钟，让 provider 端缓存自然过期，避免跨组污染
-2. **渠道健康** — 跑测试前先用 Go smoke tool 确认所有渠道可用
+2. **渠道健康** — 跑测试前先用 fy-smoke 确认所有渠道可用
 3. **费用预估** — 30轮 × 3次 × 4组 = 360 次请求，每次消耗数千 tokens，总计约 200-500 万 tokens
 4. **DeepSeek 缓存特性** — DeepSeek 的 prefix caching 是自动的，无需显式创建 cache 对象；缓存粒度为 64 tokens 对齐
 
