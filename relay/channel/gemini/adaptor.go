@@ -134,7 +134,8 @@ func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInf
 func isGeminiImagePreviewModel(model string) bool {
 	return strings.HasPrefix(model, "gemini-3-pro-image") ||
 		strings.HasPrefix(model, "gemini-3.1-flash-image") ||
-		strings.HasPrefix(model, "gemini-2.5-flash-image")
+		strings.HasPrefix(model, "gemini-2.5-flash-image") ||
+		strings.HasPrefix(model, "nano-banana")
 }
 
 // Fy-api overlay: route OpenAI image-compatible requests for Gemini
@@ -284,9 +285,31 @@ func rawImagePartsFromJSON(raw json.RawMessage) ([]dto.GeminiPart, error) {
 	}
 
 	var encodedList []string
-	if err := common.Unmarshal(raw, &encodedList); err != nil {
+	if err := common.Unmarshal(raw, &encodedList); err == nil {
+		return geminiImagePartsFromEncodedStrings(encodedList)
+	}
+
+	var imageObject geminiImageReferenceObject
+	if err := common.Unmarshal(raw, &imageObject); err == nil {
+		return geminiImagePartsFromReferenceObject(imageObject)
+	}
+
+	var imageObjects []geminiImageReferenceObject
+	if err := common.Unmarshal(raw, &imageObjects); err != nil {
 		return nil, fmt.Errorf("invalid image payload: %w", err)
 	}
+	parts := make([]dto.GeminiPart, 0, len(imageObjects))
+	for _, imageObject := range imageObjects {
+		imageParts, err := geminiImagePartsFromReferenceObject(imageObject)
+		if err != nil {
+			return nil, err
+		}
+		parts = append(parts, imageParts...)
+	}
+	return parts, nil
+}
+
+func geminiImagePartsFromEncodedStrings(encodedList []string) ([]dto.GeminiPart, error) {
 	parts := make([]dto.GeminiPart, 0, len(encodedList))
 	for _, encoded := range encodedList {
 		imageParts, err := geminiImagePartFromEncodedString(encoded)
@@ -296,6 +319,39 @@ func rawImagePartsFromJSON(raw json.RawMessage) ([]dto.GeminiPart, error) {
 		parts = append(parts, imageParts...)
 	}
 	return parts, nil
+}
+
+type geminiImageReferenceObject struct {
+	ImageURL json.RawMessage `json:"image_url,omitempty"`
+	URL      string          `json:"url,omitempty"`
+	FileID   string          `json:"file_id,omitempty"`
+}
+
+func geminiImagePartsFromReferenceObject(imageObject geminiImageReferenceObject) ([]dto.GeminiPart, error) {
+	if strings.TrimSpace(imageObject.FileID) != "" {
+		return nil, errors.New("Gemini image-preview edits do not support file_id image references; upload the file directly or provide an image URL/base64 string")
+	}
+	if encoded := strings.TrimSpace(imageObject.URL); encoded != "" {
+		return geminiImagePartFromEncodedString(encoded)
+	}
+	if len(imageObject.ImageURL) == 0 {
+		return nil, errors.New("invalid image payload: image object must include image_url or url")
+	}
+
+	var encoded string
+	if err := common.Unmarshal(imageObject.ImageURL, &encoded); err == nil {
+		return geminiImagePartFromEncodedString(encoded)
+	}
+	var nested struct {
+		URL string `json:"url"`
+	}
+	if err := common.Unmarshal(imageObject.ImageURL, &nested); err != nil {
+		return nil, fmt.Errorf("invalid image payload: image_url must be a string or object with url: %w", err)
+	}
+	if strings.TrimSpace(nested.URL) == "" {
+		return nil, errors.New("invalid image payload: image_url.url is required")
+	}
+	return geminiImagePartFromEncodedString(nested.URL)
 }
 
 func geminiImagePartFromEncodedString(encoded string) ([]dto.GeminiPart, error) {
@@ -367,7 +423,10 @@ type geminiImageConfig struct {
 
 func processGeminiImageSizeParameters(size, quality string) geminiImageConfig {
 	config := geminiImageConfig{}
+
 	switch size {
+	case "256x256", "512x512", "1024x1024", "1536x1536", "2048x2048", "4096x4096":
+		config.AspectRatio = "1:1"
 	case "1536x1024":
 		config.AspectRatio = "3:2"
 	case "1024x1536":
@@ -376,14 +435,17 @@ func processGeminiImageSizeParameters(size, quality string) geminiImageConfig {
 		config.AspectRatio = "9:16"
 	case "1792x1024":
 		config.AspectRatio = "16:9"
-	case "2048x2048":
-		config.ImageSize = "2K"
-	case "4096x4096":
-		config.ImageSize = "4K"
 	default:
 		if strings.Contains(size, ":") {
 			config.AspectRatio = size
 		}
+	}
+
+	switch size {
+	case "2048x2048":
+		config.ImageSize = "2K"
+	case "4096x4096":
+		config.ImageSize = "4K"
 	}
 
 	switch strings.ToLower(strings.TrimSpace(quality)) {
