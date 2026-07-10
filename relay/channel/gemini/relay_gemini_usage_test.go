@@ -306,6 +306,44 @@ func TestGeminiAdaptorConvertsJsonEditImagesArrayURLsToInlineData(t *testing.T) 
 	require.NotEmpty(t, req.Contents[0].Parts[2].InlineData.Data)
 }
 
+func TestGeminiAdaptorConvertsJsonEditImageURLObjectsToInlineData(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		w.Write([]byte{
+			0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+			0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+		})
+	}))
+	defer srv.Close()
+
+	adaptor := &Adaptor{}
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/edits", nil)
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	got, err := adaptor.convertGeminiImagePreviewRequest(c, &relaycommon.RelayInfo{
+		RelayMode: relayconstant.RelayModeImagesEdits,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelType:       constant.ChannelTypeGemini,
+			UpstreamModelName: "gemini-3-pro-image-preview",
+		},
+	}, dto.ImageRequest{
+		Model:  "gemini-3-pro-image-preview",
+		Prompt: "edit image from OpenAI image URL object",
+		Images: json.RawMessage(fmt.Sprintf(`[{"image_url":"%s/object.png"}]`, srv.URL)),
+	})
+	require.NoError(t, err)
+
+	req, ok := got.(*dto.GeminiChatRequest)
+	require.True(t, ok)
+	require.Len(t, req.Contents[0].Parts, 2)
+	require.Equal(t, "edit image from OpenAI image URL object", req.Contents[0].Parts[0].Text)
+	require.NotNil(t, req.Contents[0].Parts[1].InlineData)
+	require.NotEmpty(t, req.Contents[0].Parts[1].InlineData.Data)
+}
+
 func TestGeminiAdaptorRejectsInvalidImageURL(t *testing.T) {
 	t.Parallel()
 

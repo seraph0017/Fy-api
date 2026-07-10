@@ -537,7 +537,8 @@
 - **问题**：OpenAI `/v1/images/edits` 接口支持在 `image`/`images`/`mask` 字段传 HTTP URL，但 Gemini image-preview 转换路径里 `geminiImagePartFromEncodedString` 只处理 base64 data URI，遇到 URL 会报 decode 错误
 - **修改文件**：
   - `relay/channel/gemini/adaptor.go`：`geminiImagePartFromEncodedString` 新增 URL 前缀检测（`http://`/`https://`），匹配时调用新增的 `downloadGeminiImageParts` 下载图片并转为 base64 `InlineData`
-- **新增测试**：`relay/channel/gemini/relay_gemini_usage_test.go`：3 个测试（单 URL、URL 数组、404 URL 拒绝）
+- **追加修复**：`rawImagePartsFromJSON` 兼容 OpenAI 对象形态的图片引用：`{"image_url":"https://..."}`、`{"image_url":{"url":"https://..."}}`、`{"url":"https://..."}` 以及这些对象的数组；`file_id` 仍不支持，会返回明确错误，避免在 Gemini image-preview 路径里把对象数组误报为 500 反序列化失败。
+- **新增测试**：`relay/channel/gemini/relay_gemini_usage_test.go`：4 个测试（单 URL、URL 数组、OpenAI URL object 数组、404 URL 拒绝）
 - **行为**：仅对 Gemini image-preview 模型的 `/v1/images/edits` 路径生效，不影响 Imagen 或 chat 路线
 - **冲突风险**：极低（adaptor.go 内 `geminiImagePartFromEncodedString` 新增 4 行分支 + 独立新函数 `downloadGeminiImageParts`）
 
