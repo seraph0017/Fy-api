@@ -134,7 +134,8 @@ func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInf
 func isGeminiImagePreviewModel(model string) bool {
 	return strings.HasPrefix(model, "gemini-3-pro-image") ||
 		strings.HasPrefix(model, "gemini-3.1-flash-image") ||
-		strings.HasPrefix(model, "gemini-2.5-flash-image")
+		strings.HasPrefix(model, "gemini-2.5-flash-image") ||
+		strings.HasPrefix(model, "nano-banana")
 }
 
 // Fy-api overlay: route OpenAI image-compatible requests for Gemini
@@ -422,7 +423,10 @@ type geminiImageConfig struct {
 
 func processGeminiImageSizeParameters(size, quality string) geminiImageConfig {
 	config := geminiImageConfig{}
+
 	switch size {
+	case "256x256", "512x512", "1024x1024", "1536x1536", "2048x2048", "4096x4096":
+		config.AspectRatio = "1:1"
 	case "1536x1024":
 		config.AspectRatio = "3:2"
 	case "1024x1536":
@@ -431,14 +435,17 @@ func processGeminiImageSizeParameters(size, quality string) geminiImageConfig {
 		config.AspectRatio = "9:16"
 	case "1792x1024":
 		config.AspectRatio = "16:9"
-	case "2048x2048":
-		config.ImageSize = "2K"
-	case "4096x4096":
-		config.ImageSize = "4K"
 	default:
 		if strings.Contains(size, ":") {
 			config.AspectRatio = size
 		}
+	}
+
+	switch size {
+	case "2048x2048":
+		config.ImageSize = "2K"
+	case "4096x4096":
+		config.ImageSize = "4K"
 	}
 
 	switch strings.ToLower(strings.TrimSpace(quality)) {
