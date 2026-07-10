@@ -503,6 +503,7 @@
           <a href="#chat" class="nav-link">Chat Completions</a>
           <a href="#chat-request" class="nav-link l2">请求参数</a>
           <a href="#chat-message" class="nav-link l2">Message 结构</a>
+          <a href="#chat-multimodal-limits" class="nav-link l2">多模态上传限制</a>
           <a href="#chat-tools" class="nav-link l2">Tools &amp; 工具调用</a>
           <a href="#chat-response" class="nav-link l2">响应格式</a>
           <a href="#chat-stream" class="nav-link l2">流式响应</a>
@@ -739,6 +740,36 @@
             <tr><td><code>video_url</code></td><td><code>url</code> (string)</td><td>视频输入</td></tr>
           </tbody>
         </table>
+
+        <h4 id="chat-multimodal-limits">多模态上传限制（图片 / 文档 / 视频）</h4>
+        <p>以下限制适用于 Chat Completions、Responses 或 Gemini Native 的多模态理解输入；图片生成/编辑的参考图数量见 <a href="#image-request">Image Generation</a> 和 <a href="#image-edits-request">Image Edits</a>。</p>
+        <table>
+          <thead><tr><th>输入类型</th><th>OpenAI / GPT 模型</th><th>Gemini 模型</th><th>备注</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>图片理解</td>
+              <td>每请求最多 1500 张；请求内图片总负载最多 512 MB；支持 PNG、JPEG/JPG、WEBP、非动图 GIF</td>
+              <td>每请求最多 3600 张；支持 PNG、JPEG、WEBP、HEIC、HEIF</td>
+              <td>图片会计入输入 token；URL 必须公网可访问且响应及时，较大文件建议先上传或改用 provider 原生文件能力</td>
+            </tr>
+            <tr>
+              <td>文档 / 文件</td>
+              <td>单请求可带多份文件，但单个文件小于 50 MB，所有文件合计小于 50 MB；常见支持 PDF、TXT/MD/JSON/HTML/XML/代码文件、DOC/DOCX/RTF/ODT、PPT/PPTX、CSV/XLS/XLSX</td>
+              <td>PDF 视觉理解支持长文档，最高约 1000 页；非 PDF 文档通常按文本处理，图表和版式会丢失；大文件建议走 Gemini File API</td>
+              <td>当前网关推荐直接传 <code>file_data</code> 或可下载 URL；<code>file_id</code> 是否可用取决于平台是否开放 <code>/v1/files</code></td>
+            </tr>
+            <tr>
+              <td>视频理解</td>
+              <td>OpenAI Chat/Responses 兼容输入当前不承诺原生视频理解；如需分析视频，请拆帧、转文本或使用上游明确支持的视频理解模型</td>
+              <td>Gemini 2.5 及以后每请求最多 10 个视频；更早 Gemini 模型通常最多 1 个视频；小视频可 inline，长视频/大文件建议 File API，YouTube URL 需公开视频</td>
+              <td>这里是“视频理解输入”；<code>/v1/video/generations</code> / <code>/v1/videos</code> 是视频生成任务接口，限制按任务模型另算</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="callout">
+          <strong>字段兼容说明：</strong>同一个 <code>image_url</code> / <code>file</code> / <code>video_url</code> 字段会按最终路由到的上游模型转换。最终可上传数量、格式、大小和 token 计费以具体模型和供应商当时能力为准；超过上游限制时通常返回 400 类错误。
+        </div>
 
         <!-- Tools -->
         <h3 id="chat-tools">Tools &amp; 工具调用</h3>
@@ -1097,6 +1128,7 @@ for (const model of models.data) {
           <tbody>
             <tr><td><code>model</code></td><td>string</td><td>是</td><td>—</td><td>模型名。常见路由包括 OpenAI/Azure GPT Image、DALL-E 兼容模型、Gemini <code>imagen*</code>、Gemini image-preview、通义万相、火山、腾讯 AIArt、MiniMax、Replicate 等；最终可用模型以控制台渠道配置为准。</td></tr>
             <tr><td><code>prompt</code></td><td>string</td><td>是</td><td>—</td><td>图片描述提示词；长度、语言和安全策略以上游渠道为准。</td></tr>
+            <tr><td><code>images</code></td><td>array</td><td>否</td><td>—</td><td>参考图数组。OpenAI GPT Image 参考图数量按上游 Images API 能力处理；Gemini / Nano Banana 的数量限制见下方渠道兼容说明。</td></tr>
             <tr><td><code>n</code></td><td>integer</td><td>否</td><td>1</td><td>生成张数。网关默认补为 1；不同上游会限制、忽略或改写该值，例如 Gemini image-preview 转为 <code>candidateCount</code>，Gemini Imagen 转为 <code>sampleCount</code>。</td></tr>
             <tr><td><code>size</code></td><td>string</td><td>否</td><td>按模型/渠道</td><td>尺寸或比例。OpenAI 兼容渠道会透传；DALL-E 兼容模型会做基础尺寸校验；Gemini 会映射到 <code>aspectRatio</code> 或 <code>imageSize</code>；MiniMax/火山/即梦等渠道会按各自支持范围转换。</td></tr>
             <tr><td><code>quality</code></td><td>string</td><td>否</td><td>按模型/渠道</td><td>质量档位。<code>gpt-image-1</code> / <code>gpt-image-2</code> 会把空值或旧值规范化；Gemini 会映射为 <code>1K</code> / <code>2K</code> / <code>4K</code>；其他渠道是否生效以上游适配为准。</td></tr>
@@ -1122,10 +1154,10 @@ for (const model of models.data) {
         <table>
           <thead><tr><th>渠道/模型</th><th>网关行为</th><th>参数映射</th></tr></thead>
           <tbody>
-            <tr><td>OpenAI 兼容渠道</td><td>JSON 请求按 <code>ImageRequest</code> 结构透传，非流式返回统一 image response，流式返回 OpenAI image SSE 事件。</td><td><code>background</code>、<code>moderation</code>、<code>output_format</code>、<code>output_compression</code>、<code>partial_images</code> 等字段是否生效取决于上游模型。DALL-E 2/3 会做基础 <code>size</code> 校验；<code>gpt-image-1</code> / <code>gpt-image-2</code> 会规范化 <code>quality</code>。</td></tr>
+            <tr><td>OpenAI 兼容渠道</td><td>JSON 请求按 <code>ImageRequest</code> 结构透传，非流式返回统一 image response，流式返回 OpenAI image SSE 事件。</td><td><code>background</code>、<code>moderation</code>、<code>output_format</code>、<code>output_compression</code>、<code>partial_images</code> 等字段是否生效取决于上游模型。DALL-E 2/3 会做基础 <code>size</code> 校验；<code>gpt-image-1</code> / <code>gpt-image-2</code> 会规范化 <code>quality</code>；GPT Image 编辑接口最多 16 张参考图，生成接口是否支持参考图及数量以 OpenAI 上游模型能力为准。</td></tr>
             <tr><td>Azure GPT Image</td><td>按 OpenAI 兼容请求转发。</td><td>当模型为 <code>gpt-image-*</code> 或 <code>chatgpt-image-latest</code> 且请求为生成接口时，网关会删除 <code>response_format</code>；Azure 上游默认返回 base64 图片。</td></tr>
             <tr><td>Gemini <code>imagen*</code></td><td>转为 Gemini Imagen <code>models/{model}:predict</code>。</td><td><code>prompt</code> 转 <code>instances[0].prompt</code>；<code>n</code> 转 <code>sampleCount</code>；<code>size</code> 转 <code>aspectRatio</code>：<code>1024x1024</code>→<code>1:1</code>、<code>1536x1024</code>→<code>3:2</code>、<code>1024x1536</code>→<code>2:3</code>、<code>1792x1024</code>→<code>16:9</code>、<code>1024x1792</code>→<code>9:16</code>；<code>quality=high/hd/2K</code> 转 <code>imageSize=2K</code>，<code>auto/medium/low/standard/1K</code> 转 <code>1K</code>；<code>response_format</code>、<code>background</code>、<code>moderation</code>、<code>output_format</code>、<code>output_compression</code>、<code>partial_images</code> 不映射。</td></tr>
-            <tr><td>Gemini image-preview：<code>gemini-3-pro-image*</code>、<code>gemini-3.1-flash-image*</code>、<code>gemini-2.5-flash-image</code></td><td>转为 Gemini <code>generateContent</code>，请求包含文本 prompt，并要求 <code>responseModalities=["TEXT","IMAGE"]</code>。</td><td><code>n</code> 转 <code>candidateCount</code>；<code>size</code> 转 <code>imageConfig.aspectRatio</code> 或 <code>imageConfig.imageSize</code>；<code>2048x2048</code> 转 <code>2K</code>，<code>4096x4096</code> 转 <code>4K</code>；<code>quality</code> 转 <code>1K</code> / <code>2K</code> / <code>4K</code>；<code>response_format</code>、<code>background</code>、<code>moderation</code>、<code>output_format</code>、<code>output_compression</code>、<code>partial_images</code> 不映射。这类模型版本默认钉到 <code>v1beta</code>，原生 Gemini <code>/v1beta/...</code> 入口会保留客户端路径版本。</td></tr>
+            <tr><td>Gemini image-preview：<code>gemini-3-pro-image*</code>、<code>nano-banana-pro-preview</code>、<code>gemini-3.1-flash-image*</code>、<code>gemini-2.5-flash-image</code></td><td>转为 Gemini <code>generateContent</code>，请求包含文本 prompt，并要求 <code>responseModalities=["TEXT","IMAGE"]</code>。</td><td><code>images</code> 会作为参考图传给 Gemini：<code>gemini-2.5-flash-image</code> 建议/支持最多 3 张，<code>gemini-3-pro-image*</code>、<code>nano-banana-pro-preview</code>、<code>gemini-3.1-flash-image*</code> 最多可混合 14 张参考图；<code>n</code> 转 <code>candidateCount</code>；<code>size</code> 转 <code>imageConfig.aspectRatio</code> 或 <code>imageConfig.imageSize</code>；<code>2048x2048</code> 转 <code>2K</code>，<code>4096x4096</code> 转 <code>4K</code>；<code>quality</code> 转 <code>1K</code> / <code>2K</code> / <code>4K</code>；<code>response_format</code>、<code>background</code>、<code>moderation</code>、<code>output_format</code>、<code>output_compression</code>、<code>partial_images</code> 不映射。这类模型版本默认钉到 <code>v1beta</code>，原生 Gemini <code>/v1beta/...</code> 入口会保留客户端路径版本。</td></tr>
             <tr><td>腾讯 AIArt</td><td>当 Tencent 渠道 base_url 为 <code>aiart.tencentcloudapi.com</code> 时，转为腾讯 AIArt 同步轮询流程。</td><td>请求主体主要来自 <code>model</code>、<code>prompt</code> 和 <code>extra_fields</code>；安全命中会返回 OpenAI 风格 <code>moderation_blocked</code>。响应默认返回 <code>b64_json</code>，仅 <code>response_format:"url"</code> 返回 URL。</td></tr>
             <tr><td>MiniMax</td><td>转为 MiniMax 图片生成请求。</td><td><code>size</code> 映射为支持的 <code>aspect_ratio</code>；<code>response_format</code> 规范化为 MiniMax 支持的值；<code>watermark</code> 映射为水印开关；<code>extra_fields.prompt_optimizer</code> 可控制提示词优化。</td></tr>
             <tr><td>Replicate / 火山 / 即梦等 URL 型渠道</td><td>按各自适配器提交任务或同步请求，再转换为 OpenAI 风格图片响应。</td><td><code>response_format</code> 只在适配器明确支持时生效：Replicate 的 <code>b64_json</code> 会下载 URL 转 base64；即梦默认返回 URL；火山会把 <code>response_format</code> 映射为上游编码参数。</td></tr>
