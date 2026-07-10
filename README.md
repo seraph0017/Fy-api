@@ -62,7 +62,7 @@ TraceNex 是 **[QuantumNous/new-api](https://github.com/QuantumNous/new-api) 的
 | # | 功能 | 位置 | 状态 |
 |---|------|------|:----:|
 | 1 | **日志 CSV 导出** | `GET /api/log/export`（管理员）+ `GET /api/log/self/export`（用户）。UTF-8 + BOM，包含 `request_id` 列。 | ✅ |
-| 2 | **用量日志页的「导出」按钮** | 一键下载当前筛选条件下的 CSV，上限 `MaxLogExportItems=50000` 行。 | ✅ |
+| 2 | **用量日志页的「导出」按钮** | 一键下载当前筛选条件下的 CSV，上限 `MaxLogExportItems=500000` 行。 | ✅ |
 | 3 | **`/docs` 内嵌产品文档** | 基于 Markdown 的用户手册（附截图），用新的 `NewMarkdownRender` 组件渲染。 | ✅ |
 | 4 | **邮箱/用户名登录按钮前置** | 登录表单重新排序，主要入口不再被 OAuth 按钮遮住。 | ✅ |
 | 5 | **「没有账户？注册」 始终显示** | 去掉了 `self_use_mode` 条件限制（如需禁用注册，仍可在后台配置）。 | ✅ |

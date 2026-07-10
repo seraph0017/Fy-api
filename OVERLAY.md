@@ -568,6 +568,18 @@
 - **行为**：不记录 key/base_url 等敏感连接信息；只记录影响渠道选择的非敏感字段，便于后续从 `logs.other.op.params.selection` 或容器服务日志还原保存值。
 - **冲突风险**：低（`controller/channel.go` 的渠道更新审计区域是上游可能改动点；merge 时保留 selection audit 语义即可）
 
+### B-34 [gemini] Image-preview OpenAI Images response and size compatibility
+
+- **问题**：Gemini image-preview / Nano Banana 模型通过 `generateContent` 返回 `inlineData` 和 `usageMetadata`，TraceNex 转成 OpenAI Images 响应时只返回 `created`/`data`，没有透出 `usage`；同时 `size:"1024x1024"` 没有映射到 Gemini `imageConfig.aspectRatio`，上游可能按默认比例返回 16:9。
+- **修改文件**：
+  - `dto/openai_image.go`：`ImageResponse` 新增可选 `usage` 字段，用于与 GPT Image 的响应结构对齐
+  - `relay/channel/gemini/chat_image_handler.go`：把 Gemini `usageMetadata` 转为 OpenAI Images 风格 usage，并写入响应 JSON；同时保留返回给计费流程的 `dto.Usage`
+  - `relay/channel/gemini/adaptor.go`：`processGeminiImageSizeParameters` 将正方形尺寸映射为 `aspectRatio:"1:1"`，并分开处理 `imageSize`；`isGeminiImagePreviewModel` 增加 `nano-banana*` 别名识别
+  - `docs/api-reference.html`、`web/classic/public/product-docs/api-reference.html`：补充 Gemini / Nano Banana 与 GPT Image 在 `images` 数量、`size`、`quality`、`response_format` 等字段上的差异说明；同时补充 Chat/Responses/Gemini Native 多模态理解输入中图片、文档、视频的上传数量、大小和格式限制备注
+- **新增测试**：`relay/channel/gemini/relay_gemini_usage_test.go`：覆盖 `1024x1024` generation/edit 均转为 `1:1`，以及 Gemini image-preview 响应包含 root `usage.input_tokens` / `usage.output_tokens` / `usage.total_tokens`
+- **行为**：仅影响 Gemini image-preview / Nano Banana 的 OpenAI Images 兼容路径；不改变 OpenAI/GPT Image、Imagen、chat 路线。
+- **冲突风险**：低（新增 DTO 可选字段；Gemini adapter 内局部映射；静态 API 文档同步）
+
 ---
 
 ## 前端定制
