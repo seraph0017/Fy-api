@@ -551,11 +551,12 @@
 - **修改文件**：
   - `service/error.go`：`RelayErrorHandler` 在非 2xx 响应读 body 后，把上游 host、status、白名单 header 和 1KB body preview 写入 `NewAPIError.Metadata.upstream_debug`
   - `controller/relay.go`：`processChannelError` 写 error log 时把 `Metadata.upstream_debug` 合并到 `logs.other.admin_info.upstream_debug`（普通用户自助日志会剥离 `admin_info`）
+  - `docs/api-reference.html`、`web/classic/public/product-docs/api-reference.html`：补充 Chat/Responses/Gemini Native 多模态理解输入中图片、文档、视频的上传数量、大小和格式限制备注，并在图片生成文档中补充 Gemini / Nano Banana 与 GPT Image 在 `images` 参考图数量上的差异说明
 - **新增测试**：
   - `service/error_test.go`：验证 504 响应会记录白名单 header、host、截断 body preview，且不记录 `Authorization`
   - `controller/relay_error_metadata_test.go`：验证 error metadata 只把 `upstream_debug` 合并进日志 other
-- **行为**：不改日志表结构，不向普通响应增加字段；只在 error log 的 `other.admin_info` JSON 中保留受控诊断信息。
-- **冲突风险**：低（两处小函数，均带 `// Fy-api overlay:` 注释）
+- **行为**：不改日志表结构，不向普通响应增加字段；只在 error log 的 `other.admin_info` JSON 中保留受控诊断信息。文档更新仅影响产品文档展示，不改变运行时协议。
+- **冲突风险**：低（两处小函数，均带 `// Fy-api overlay:` 注释；文档变更需在 `docs/api-reference.html` 与 classic public 文档之间保持同步）
 
 ### B-33 [audit] 渠道更新记录 priority/weight before-after
 
