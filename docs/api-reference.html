@@ -1075,7 +1075,7 @@ for (const model of models.data) {
         <table>
           <thead><tr><th>参数</th><th>类型</th><th>必填</th><th>默认</th><th>说明</th></tr></thead>
           <tbody>
-            <tr><td><code>model</code></td><td>string</td><td>是</td><td>—</td><td>模型名，如 <code>gpt-image-2</code>、<code>dall-e-3</code></td></tr>
+            <tr><td><code>model</code></td><td>string</td><td>是</td><td>—</td><td>模型名，如 <code>gpt-image-2</code>、<code>dall-e-3</code>、<code>gemini-3-pro-image-preview</code>、<code>nano-banana-pro-preview</code></td></tr>
             <tr><td><code>prompt</code></td><td>string</td><td>是</td><td>—</td><td>图片描述提示词</td></tr>
             <tr><td><code>n</code></td><td>integer</td><td>否</td><td>1</td><td>生成张数，通常 1–10</td></tr>
             <tr><td><code>size</code></td><td>string</td><td>否</td><td>"1024x1024"</td><td>图片尺寸。DALL-E 标准：<code>"256x256"</code> / <code>"512x512"</code> / <code>"1024x1024"</code> / <code>"1792x1024"</code> / <code>"1024x1792"</code>；GPT Image 按上游支持</td></tr>
@@ -1096,6 +1096,17 @@ for (const model of models.data) {
           <strong>注意：</strong>部分图片模型不支持 <code>response_format</code>。腾讯 AIArt 服务默认返回 <code>b64_json</code>，只有显式传 <code>response_format:"url"</code> 时才返回 COS URL。
         </div>
 
+        <div class="callout">
+          <strong>Gemini / Nano Banana 兼容备注：</strong>
+          <ul>
+            <li><code>gemini-3-pro-image-preview</code>、<code>gemini-3-pro-image</code>、<code>nano-banana-pro-preview</code>、<code>gemini-3.1-flash-image-preview</code>、<code>gemini-3.1-flash-image</code>、<code>gemini-2.5-flash-image</code> 通过 Gemini <code>generateContent</code> 转换为 OpenAI Images 响应结构。</li>
+            <li><code>size</code> 会映射为 Gemini <code>imageConfig.aspectRatio</code>：<code>1024x1024</code> 等正方形为 <code>1:1</code>，<code>1536x1024</code> 为 <code>3:2</code>，<code>1024x1536</code> 为 <code>2:3</code>，<code>1792x1024</code> 为 <code>16:9</code>，<code>1024x1792</code> 为 <code>9:16</code>；也可直接传 <code>16:9</code> 这类比例。</li>
+            <li><code>quality</code> 会映射为 Gemini <code>imageConfig.imageSize</code>：<code>high</code> / <code>hd</code> / <code>2K</code> 为 <code>2K</code>，<code>4K</code> 为 <code>4K</code>，<code>auto</code> / <code>standard</code> / <code>medium</code> / <code>low</code> / <code>1K</code> 为 <code>1K</code>。</li>
+            <li><code>response_format</code>、<code>background</code>、<code>output_format</code>、<code>output_compression</code>、<code>stream</code>、<code>partial_images</code> 按上游能力处理；Gemini image-preview 当前返回 <code>b64_json</code>，不保证 URL、透明背景、压缩格式或流式中间图。</li>
+            <li><code>n</code> 会转为 Gemini <code>candidateCount</code>，实际可返回张数以对应 Gemini 模型为准。</li>
+          </ul>
+        </div>
+
         <!-- Image Response -->
         <h3 id="image-response">响应格式</h3>
         <table>
@@ -1103,6 +1114,7 @@ for (const model of models.data) {
           <tbody>
             <tr><td><code>created</code></td><td>integer</td><td>Unix 时间戳</td></tr>
             <tr><td><code>data</code></td><td>ImageData[]</td><td>生成的图片数组</td></tr>
+            <tr><td><code>usage</code></td><td>object</td><td>Token 使用情况。GPT Image 与 Gemini image-preview 会尽量返回 <code>input_tokens</code>、<code>output_tokens</code>、<code>total_tokens</code>；其他上游按实际能力返回</td></tr>
           </tbody>
         </table>
 
@@ -1121,7 +1133,12 @@ for (const model of models.data) {
   "created": 1710000000,
   "data": [
     { "b64_json": "iVBORw0KGgoAAAANSUhEUg..." }
-  ]
+  ],
+  "usage": {
+    "input_tokens": 120,
+    "output_tokens": 1120,
+    "total_tokens": 1240
+  }
 }</code></pre>
         <pre><code>{
   "created": 1710000000,
@@ -1185,7 +1202,8 @@ for (const model of models.data) {
         <table>
           <thead><tr><th>参数</th><th>类型</th><th>必填</th><th>说明</th></tr></thead>
           <tbody>
-            <tr><td><code>image</code></td><td>file (binary)</td><td>是</td><td>原始图片文件，支持 PNG / JPEG / WEBP</td></tr>
+            <tr><td><code>image</code></td><td>file (binary)</td><td>是</td><td>原始图片文件，支持 PNG / JPEG / WEBP。GPT Image 模型最多 16 张；Gemini / Nano Banana 的数量限制见下方备注</td></tr>
+            <tr><td><code>images</code></td><td>array</td><td>否</td><td>JSON 请求中的图片引用数组，支持 URL 字符串、<code>{"image_url":"https://..."}</code>、<code>{"image_url":{"url":"https://..."}}</code>、<code>{"url":"https://..."}</code>。<code>file_id</code> 暂不支持</td></tr>
             <tr><td><code>prompt</code></td><td>string</td><td>是</td><td>编辑描述，说明要对图片做什么修改</td></tr>
             <tr><td><code>mask</code></td><td>file (binary)</td><td>否</td><td>遮罩图片——透明区域为可编辑区域，非透明区域保持不变</td></tr>
             <tr><td><code>model</code></td><td>string</td><td>否</td><td>模型名，如 <code>gpt-image-2</code></td></tr>
@@ -1199,6 +1217,18 @@ for (const model of models.data) {
           </tbody>
         </table>
 
+        <div class="callout">
+          <strong>Gemini / Nano Banana 编辑参数差异：</strong>
+          <ul>
+            <li><code>gpt-image-2</code> 等 GPT Image 模型的 <code>image</code> / <code>images</code> 输入最多支持 16 张；<code>dall-e-2</code> 只支持 1 张方形 PNG。</li>
+            <li><code>gemini-2.5-flash-image</code>（Nano Banana）建议/支持最多 3 张输入图。</li>
+            <li><code>gemini-3-pro-image-preview</code>、<code>gemini-3-pro-image</code>、<code>nano-banana-pro-preview</code> 最多可混合 14 张参考图；高保真场景建议控制在约 5–6 张主体/对象图，角色一致性约 5 张，风格参考约 3 张。</li>
+            <li><code>gemini-3.1-flash-image-preview</code>、<code>gemini-3.1-flash-image</code> 最多可混合 14 张参考图；单个工作流中对象保真约 10 个，角色相似性约 4 个。</li>
+            <li><code>mask</code> 会作为参考图并附加遮罩说明传给 Gemini；透明区域精确 inpainting、<code>background</code>、<code>output_format</code>、<code>output_compression</code>、<code>response_format:"url"</code> 等效果以 Gemini 上游实际支持为准。</li>
+            <li><code>size</code>、<code>quality</code> 的映射规则与 Image Generation 相同；例如 <code>1024x1024</code> 会转为 Gemini <code>1:1</code>，避免默认生成 16:9。</li>
+          </ul>
+        </div>
+
         <!-- Image Edits Response -->
         <h3 id="image-edits-response">响应格式</h3>
         <p>与 Image Generation 返回结构一致，<code>data</code> 数组中每项包含生成的编辑后图片：</p>
@@ -1207,6 +1237,7 @@ for (const model of models.data) {
           <tbody>
             <tr><td><code>created</code></td><td>integer</td><td>Unix 时间戳</td></tr>
             <tr><td><code>data</code></td><td>ImageData[]</td><td>编辑后的图片数组</td></tr>
+            <tr><td><code>usage</code></td><td>object</td><td>Token 使用情况。GPT Image 与 Gemini image-preview 会尽量返回 <code>input_tokens</code>、<code>output_tokens</code>、<code>total_tokens</code></td></tr>
           </tbody>
         </table>
 
@@ -1224,7 +1255,12 @@ for (const model of models.data) {
   "created": 1710000000,
   "data": [
     { "b64_json": "iVBORw0KGgoAAAANSUhEUg..." }
-  ]
+  ],
+  "usage": {
+    "input_tokens": 120,
+    "output_tokens": 1120,
+    "total_tokens": 1240
+  }
 }</code></pre>
 
         <h3 id="image-edits-examples">调用示例</h3>

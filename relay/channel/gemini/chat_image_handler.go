@@ -48,6 +48,17 @@ func ChatImageHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 		return nil, types.NewOpenAIError(errors.New("no images found in Gemini response"), types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 	}
 
+	usage := buildUsageFromGeminiMetadata(geminiResponse.UsageMetadata, info.GetEstimatePromptTokens())
+	if usage.TotalTokens == 0 {
+		usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
+	}
+	usage.InputTokens = usage.PromptTokens
+	usage.OutputTokens = usage.CompletionTokens
+	usage.InputTokensDetails = &usage.PromptTokensDetails
+	if usage.TotalTokens > 0 || usage.InputTokens > 0 || usage.OutputTokens > 0 {
+		openAIResponse.Usage = &usage
+	}
+
 	jsonResponse, jsonErr := common.Marshal(openAIResponse)
 	if jsonErr != nil {
 		return nil, types.NewError(jsonErr, types.ErrorCodeBadResponseBody)
@@ -55,9 +66,5 @@ func ChatImageHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 
 	service.IOCopyBytesGracefully(c, resp, jsonResponse)
 
-	usage := buildUsageFromGeminiMetadata(geminiResponse.UsageMetadata, info.GetEstimatePromptTokens())
-	if usage.TotalTokens == 0 {
-		usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
-	}
 	return &usage, nil
 }

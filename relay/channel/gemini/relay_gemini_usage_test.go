@@ -29,6 +29,7 @@ func TestGeminiAdaptorSupportsGeminiImagePreviewModel(t *testing.T) {
 	require.True(t, isGeminiImagePreviewModel("gemini-3-pro-image-preview"))
 	require.True(t, isGeminiImagePreviewModel("gemini-3-pro-image"))
 	require.True(t, isGeminiImagePreviewModel("gemini-3.1-flash-image-preview"))
+	require.True(t, isGeminiImagePreviewModel("nano-banana-pro-preview"))
 
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	got, err := adaptor.convertGeminiImagePreviewRequest(c, &relaycommon.RelayInfo{
@@ -58,6 +59,31 @@ func TestGeminiAdaptorSupportsGeminiImagePreviewModel(t *testing.T) {
 	require.NoError(t, common.Unmarshal(req.GenerationConfig.ImageConfig, &extra))
 	require.Equal(t, "9:16", extra["aspectRatio"])
 	require.Equal(t, "2K", extra["imageSize"])
+}
+
+func TestGeminiAdaptorMapsSquareImagePreviewGenerationSize(t *testing.T) {
+	t.Parallel()
+
+	adaptor := &Adaptor{}
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	got, err := adaptor.convertGeminiImagePreviewRequest(c, &relaycommon.RelayInfo{
+		RelayMode: relayconstant.RelayModeImagesGenerations,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelType:       constant.ChannelTypeGemini,
+			UpstreamModelName: "gemini-3-pro-image-preview",
+		},
+	}, dto.ImageRequest{
+		Model:  "gemini-3-pro-image-preview",
+		Prompt: "a white document cover",
+		Size:   "1024x1024",
+	})
+	require.NoError(t, err)
+
+	req, ok := got.(*dto.GeminiChatRequest)
+	require.True(t, ok)
+	var imageConfig map[string]any
+	require.NoError(t, common.Unmarshal(req.GenerationConfig.ImageConfig, &imageConfig))
+	require.Equal(t, "1:1", imageConfig["aspectRatio"])
 }
 
 func TestGeminiAdaptorConvertsJsonEditImageToInlineData(t *testing.T) {
@@ -135,6 +161,9 @@ func TestGeminiAdaptorConvertsMultipartEditImageToInlineData(t *testing.T) {
 	require.NotNil(t, req.Contents[0].Parts[1].InlineData)
 	require.Equal(t, "image/png", req.Contents[0].Parts[1].InlineData.MimeType)
 	require.NotEmpty(t, req.Contents[0].Parts[1].InlineData.Data)
+	var imageConfig map[string]any
+	require.NoError(t, common.Unmarshal(req.GenerationConfig.ImageConfig, &imageConfig))
+	require.Equal(t, "1:1", imageConfig["aspectRatio"])
 }
 
 func TestGeminiAdaptorSetsJSONContentTypeForMultipartImagePreviewEdit(t *testing.T) {
@@ -427,6 +456,10 @@ func TestGeminiAdaptorDoResponseRoutesImagePreviewToChatImageHandler(t *testing.
 	require.NotNil(t, usage)
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Contains(t, w.Body.String(), `"b64_json":"aGVsbG8="`)
+	require.Contains(t, w.Body.String(), `"usage":`)
+	require.Contains(t, w.Body.String(), `"input_tokens":1`)
+	require.Contains(t, w.Body.String(), `"output_tokens":1`)
+	require.Contains(t, w.Body.String(), `"total_tokens":2`)
 }
 
 func TestGeminiChatHandlerCompletionTokensExcludeToolUsePromptTokens(t *testing.T) {
