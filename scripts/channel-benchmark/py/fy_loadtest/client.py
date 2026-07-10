@@ -1,6 +1,6 @@
 """Async OpenAI-compatible chat client with real SSE parsing.
 
-Mirrors the Go smoke tool's measurement semantics so apples-to-apples
+Mirrors fy-smoke's measurement semantics so apples-to-apples
 comparison between smoke and load-test runs is meaningful:
   - TTFT is measured from the first CONTENT chunk (role-only preamble chunks
     are intentionally excluded — that is the reason we did not reuse

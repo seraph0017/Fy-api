@@ -82,16 +82,21 @@ class IntegrityMetrics:
 
 
 def load_smoke(path: Path) -> list[SmokeMetrics]:
-    """Parse Go smoke-test JSON."""
+    """Parse fy-smoke result JSON.
+
+    Older archived smoke JSONs used PascalCase keys. Keep reading those so
+    historical scorecards can still be regenerated, but new files are produced
+    by the Python fy-smoke CLI.
+    """
     data = _read_json(path)
     results: list[SmokeMetrics] = []
     for item in data.get("results", []):
-        rate = item.get("SuccessRatePct", 0.0) / 100.0
+        rate_pct = item.get("success_rate_pct", item.get("SuccessRatePct", 0.0))
         results.append(SmokeMetrics(
-            channel_name=item.get("ChannelName", ""),
-            channel_id=item.get("ChannelID"),
-            model=item.get("Model", ""),
-            success_rate=rate,
+            channel_name=item.get("channel_name", item.get("ChannelName", "")),
+            channel_id=item.get("channel_id", item.get("ChannelID")),
+            model=item.get("model", item.get("Model", "")),
+            success_rate=float(rate_pct or 0.0) / 100.0,
         ))
     return results
 
@@ -319,4 +324,3 @@ def load_image_loadtest(path: Path) -> list[ImageLoadtestMetrics]:
             success_rate=stats.get("success_rate"),
         ))
     return results
-

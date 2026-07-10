@@ -37,8 +37,8 @@
 cd scripts/channel-benchmark/py
 export PYENV_VERSION=3.11.9
 
-# 2a. Go smoke test（快，2分钟）
-cd ../go && go run . -config benchmark.local.yaml && cd ../py
+# 2a. Smoke test（快，2分钟）
+fy-smoke -c smoke.local.yaml
 
 # 2b. Loadtest（慢，取决于并发级别数 × 模型数）
 fy-loadtest -c loadtest.local.yaml
@@ -105,7 +105,7 @@ PDF 中文渲染依赖系统字体：
 
 ### 4.6 报告数据路径
 
-`generate_combined_report.py` 顶部的 `LT_FILES` / `QA_JSON` / `CF_FILES` / `GO_JSON` 是硬编码路径。
+`generate_combined_report.py` 顶部的 `SMOKE_JSON` / `LT_FILES` / `QA_JSON` / `CF_FILES` 是硬编码路径。
 每次跑完新测试后需要**手动更新这些路径**指向最新结果文件。
 
 ## 五、注意事项

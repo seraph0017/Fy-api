@@ -92,14 +92,13 @@
 
 ### B-7 [benchmark] 渠道基准测试工具链（channel-benchmark）
 - **新增目录**：`scripts/channel-benchmark/`
-  - `README.md` —— 顶层导航，解释 Go / Python 两套工具的分工
-  - `go/` —— 零依赖 Go 烟测器（single binary）
-    - `main.go` / `runner.go` / `client.go` / `admin.go` / `config.go` / `metrics.go` / `exporter.go`
-    - `prometheus.go` —— 自写零依赖 exposition 格式导出器（`-prom-listen :9090` 进 daemon 模式）
-    - `prometheus_test.go` / `e2e_test.go` / `testhelper_test.go` —— 全部 `-race` 通过
-    - `channel-benchmark.yaml` —— 示例配置（`${VAR}` / `${VAR:-default}` 注入环境变量）
-    - `go.mod` 只依赖 `gopkg.in/yaml.v3`
-  - `py/` —— 三件套 Python 工具（共享一个 venv / 一个 JSONL schema）
+  - `README.md` —— 顶层导航，解释 `fy-benchmark` 单入口、目录结构和输出结构
+  - `RUNBOOK-channel-benchmark.md` —— 完整渠道/模型测试执行手册，默认只暴露 `benchmark.yaml` + `fy-benchmark`
+  - `install-env.sh` —— 一键创建 Python venv、安装 benchmark CLIs、按需安装 heavy extras，并重新生成本地 deterministic fixtures
+  - `py/` —— Python 工具链（共享一个 venv / 一个 JSONL schema）
+    - `benchmark.yaml` —— 用户入口配置模板；复制成 `benchmark.local.yaml` 后只填 `base_url` / token / `channel_id` / model list / mode
+    - `fy_benchmark/` —— 统一编排器（注册 `fy-benchmark`）：读取单配置、按模型严格串行、自动生成底层 YAML、记录模块耗时日志、调用 `fy-score` 输出 `scorecard`
+    - `fy_smoke/` —— 基础烟测 + Prometheus exporter（admin 渠道查询、stream/non-stream、E2E/TTFT/ITL/usage、JSON/CSV、`--long-thinking`）
     - `fy_loadtest/` —— 并发阶梯压测（E2E/TTFT/ITL/TPOT 分位、RPS、goodput）
     - `fy_image_loadtest/` —— 图片生成持续压测（固定每渠道 worker 数、打 `/v1/images/generations`、支持多渠道同时 pin 到指定 channel id，持续跑到 Ctrl+C）
     - `fy_quality/` —— 质量评分（7 种 grader + 双裁判 rubric + 磁盘缓存）
@@ -113,17 +112,22 @@
     - `fy_image_canary/` —— 图片金丝雀真实性检测（5A vendor 对比 + 5B 指纹/跨渠道/能力边界）
     - `fy_score/` —— 统一评分器（五维度加权，文本/图片不同权重，产出 scorecard）
     - `fy_poc_loadtest/` —— 按 `bugs/POC压测方法.docx` / `bugs/报告模板.docx` 口径输出客户 POC 压测报告（三场景：23/1k/7k tokens；并发 1/10/20/30/40/50/64/80/128/256；指标 TTFT/Latency/TPOT/tokens/s/成功率）
+    - `benchmark-runs/` —— 默认运行输出目录；每次运行生成 `manifest.json` / `run-summary.*` / 自动生成的 `configs/` / 模块 `logs/` / `reports/scorecard.*`
+    - `fixtures` extra —— fixture 生成脚本所需的轻量 Pillow 依赖；text MMD、image canary、tiktoken 仍保持 opt-in extras
+    - `fixtures/` —— 协议/参数兼容测试用的可提交小素材（图片编辑 source/mask、图片/视频参考图、短音频、短视频），全部本地生成，不含客户数据或 provider 输出
+    - `unified-benchmark-runner-plan.md` —— 统一 `fy-benchmark` 编排器长期规划：CLI/YAML 分工、CN/HK 路由、协议/参数兼容矩阵、strict 模式、fixture/manifest/resume/compare 设计
     - `seedance_gateway_vs_volcengine.py` —— Seedance 2.0 网关 vs 火山直连对照脚本，用于排查上游内容安全和网关转换差异
     - `tests/` + `tests_quality/` + `tests_canary/` + `tests_image_canary/` —— 102 个 e2e 测试
   - `docs/seedance-real-person-video-support-plan.md` —— 基于 DJLine 可信素材链路整理的 SD2.0 真人视频支持方案
 - **用途**：
-  1. **烟测**（Go）—— 生产机上零依赖跑一遍所有渠道，看 TTFT / 存活 / usage 是否正常
-  2. **压测**（fy-loadtest）—— 灰度上线前验证单渠道在 N 并发下的分位延迟
-  3. **质量**（fy-quality）—— 新渠道接入前用金标 JSONL + 双裁判评分
-  4. **反替换**（fy-canary）—— 先对可信上游 vendor 直连录 baseline，再周期性审计网关下游是否被静默换模型
-  5. **监控接入**（Go Prometheus mode）—— `go run . -prom-listen :9090 -prom-interval 5m` 常驻，给 Grafana 暴露 `channel_benchmark_ttft_seconds` / `_request_total{outcome=...}` / `_run_age_seconds` 等序列
+  1. **完整渠道验收**（fy-benchmark）—— `fy-benchmark -c benchmark.local.yaml` 串行执行 smoke / conformance / integrity / loadtest / quality / canary / image 模块，并生成 `run-summary.md` + `reports/scorecard.md`
+  2. **烟测/监控**（fy-smoke）—— 快速看 TTFT / 存活 / usage，并可用 `--prom-listen` 暴露 Prometheus metrics
+  3. **压测**（fy-loadtest / fy-image-loadtest）—— 灰度上线前验证单渠道在 N 并发下的分位延迟、吞吐和错误分布
+  4. **质量**（fy-quality）—— 默认 deterministic graders；需要主观/语义覆盖时显式启用 judge / embedding
+  5. **反替换**（fy-canary / fy-image-canary）—— 有可信 baseline channel 时录 baseline，再审计目标渠道是否静默换模型
+  6. **监控接入**（fy-smoke Prometheus mode）—— `fy-smoke -c smoke.yaml --prom-listen :9090 --prom-interval 5m` 常驻，给 Grafana 暴露 `channel_benchmark_ttft_seconds` / `_request_total{outcome=...}` / `_run_age_seconds` 等序列
 - **冲突风险**：极低（完整独立子目录，不触碰 upstream 业务代码或构建链）
-- **Merge 策略**：整个子树随上游同步走；唯一需要人工 review 的是 Go 那边的 `go.mod` 模块路径（`github.com/seraph0017/Fy-api/scripts/channel-benchmark`），不要跟主仓的 Go 模块搞混
+- **Merge 策略**：整个子树随上游同步走；保持独立工具链，不触碰主仓业务代码
 
 ### B-8 [gemini] 原生 pass-through 入口保留客户端 API 版本
 - **修改文件**：`relay/channel/gemini/adaptor.go`（`GetRequestURL`，紧接 `GetGeminiVersionSetting` 调用之后追加分支）
@@ -537,12 +541,34 @@
 - **问题**：OpenAI `/v1/images/edits` 接口支持在 `image`/`images`/`mask` 字段传 HTTP URL，但 Gemini image-preview 转换路径里 `geminiImagePartFromEncodedString` 只处理 base64 data URI，遇到 URL 会报 decode 错误
 - **修改文件**：
   - `relay/channel/gemini/adaptor.go`：`geminiImagePartFromEncodedString` 新增 URL 前缀检测（`http://`/`https://`），匹配时调用新增的 `downloadGeminiImageParts` 下载图片并转为 base64 `InlineData`
-- **追加修复**：`rawImagePartsFromJSON` 兼容 OpenAI 对象形态的图片引用：`{"image_url":"https://..."}`、`{"image_url":{"url":"https://..."}}`、`{"url":"https://..."}` 以及这些对象的数组；`file_id` 仍不支持，会返回明确错误，避免在 Gemini image-preview 路径里把对象数组误报为 500 反序列化失败。
-- **新增测试**：`relay/channel/gemini/relay_gemini_usage_test.go`：4 个测试（单 URL、URL 数组、OpenAI URL object 数组、404 URL 拒绝）
+- **新增测试**：`relay/channel/gemini/relay_gemini_usage_test.go`：3 个测试（单 URL、URL 数组、404 URL 拒绝）
 - **行为**：仅对 Gemini image-preview 模型的 `/v1/images/edits` 路径生效，不影响 Imagen 或 chat 路线
 - **冲突风险**：极低（adaptor.go 内 `geminiImagePartFromEncodedString` 新增 4 行分支 + 独立新函数 `downloadGeminiImageParts`）
 
-### B-32 [gemini] Image-preview OpenAI Images response and size compatibility
+### B-32 [relay/observability] 上游错误响应诊断信息
+
+- **问题**：排查 gpt-image-2 上游 504 时，现有 error log 只有状态码、错误码、渠道和重试链，缺少判断 504 来源所需的 `server` / `cf-ray` / `x-ms-request-id` / `apim-request-id` / body preview 等信息。
+- **修改文件**：
+  - `service/error.go`：`RelayErrorHandler` 在非 2xx 响应读 body 后，把上游 host、status、白名单 header 和 1KB body preview 写入 `NewAPIError.Metadata.upstream_debug`
+  - `controller/relay.go`：`processChannelError` 写 error log 时把 `Metadata.upstream_debug` 合并到 `logs.other.admin_info.upstream_debug`（普通用户自助日志会剥离 `admin_info`）
+  - `docs/api-reference.html`、`web/classic/public/product-docs/api-reference.html`：补充 Chat/Responses/Gemini Native 多模态理解输入中图片、文档、视频的上传数量、大小和格式限制备注，并在图片生成文档中补充 Gemini / Nano Banana 与 GPT Image 在 `images` 参考图数量上的差异说明
+- **新增测试**：
+  - `service/error_test.go`：验证 504 响应会记录白名单 header、host、截断 body preview，且不记录 `Authorization`
+  - `controller/relay_error_metadata_test.go`：验证 error metadata 只把 `upstream_debug` 合并进日志 other
+- **行为**：不改日志表结构，不向普通响应增加字段；只在 error log 的 `other.admin_info` JSON 中保留受控诊断信息。文档更新仅影响产品文档展示，不改变运行时协议。
+- **冲突风险**：低（两处小函数，均带 `// Fy-api overlay:` 注释；文档变更需在 `docs/api-reference.html` 与 classic public 文档之间保持同步）
+
+### B-33 [audit] 渠道更新记录 priority/weight before-after
+
+- **问题**：生产排查 gpt-image-2 渠道分流时，`channel.update` 管理日志只记录 `changed_fields`，且原逻辑没有把 `priority` / `weight` 纳入字段列表；如果 binlog 已轮转，就无法还原渠道 8/52 当时保存的优先级和权重。
+- **修改文件**：
+  - `controller/channel.go`（`// Fy-api overlay:`：`UpdateChannel` 审计参数新增 `selection.before/after`，包含 `status` / `group` / `models` / `priority` / `weight`；同时把 `priority` / `weight` 纳入 `changed_fields`，并写一条 `channel update selection audit` 服务日志）
+- **新增测试**：
+  - `controller/channel_update_audit_test.go`
+- **行为**：不记录 key/base_url 等敏感连接信息；只记录影响渠道选择的非敏感字段，便于后续从 `logs.other.op.params.selection` 或容器服务日志还原保存值。
+- **冲突风险**：低（`controller/channel.go` 的渠道更新审计区域是上游可能改动点；merge 时保留 selection audit 语义即可）
+
+### B-34 [gemini] Image-preview OpenAI Images response and size compatibility
 
 - **问题**：Gemini image-preview / Nano Banana 模型通过 `generateContent` 返回 `inlineData` 和 `usageMetadata`，TraceNex 转成 OpenAI Images 响应时只返回 `created`/`data`，没有透出 `usage`；同时 `size:"1024x1024"` 没有映射到 Gemini `imageConfig.aspectRatio`，上游可能按默认比例返回 16:9。
 - **修改文件**：
@@ -568,8 +594,9 @@
 
 ### F-2 [brand] Logo 和 favicon
 - **新增**：`web/classic/public/new_logo.png` (3.4 MB)
-- **替换**：`web/classic/public/favicon.ico`
-- **冲突风险**：低（上游偶尔更新 logo.png，我们用 new_logo.png 独立）
+- **替换**：`web/classic/public/favicon.ico`、`web/classic/public/logo.png`
+- **原因**：前端在后台 `Logo` 配置为空时会 fallback 到 `/logo.png`；该文件必须是 TraceNex 默认图标，避免回退显示 upstream New API logo。
+- **冲突风险**：低（上游偶尔更新 logo.png，merge 时保留 TraceNex 版本）
 - **注意**：v1.0 merge 时 git 的 directory-rename 启发式会把 public 资源建议到 `web/default/public/`，**必须手动改到 `web/classic/public/`**
 
 ### F-3 [i18n] 品牌词替换

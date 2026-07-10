@@ -12,7 +12,13 @@ build/
 *.egg-info/
 
 # Test output
+benchmark.local.yaml
+benchmark-runs/
+benchmark-results/
+smoke.local.yaml
+smoke-results/
 loadtest-results/
+loadtest-long-thinking-results/
 htmlcov/
 .coverage
 conformance-results/
@@ -27,12 +33,16 @@ image-loadtest.local.yaml
 image-loadtest-results/
 image-conformance.local.yaml
 image-conformance-results/
+image-canary.local.yaml
+image-canary-results/
 eval.local.yaml
 eval-*.local.yaml
 eval-results/
 canary-baselines/
 canary-results/
 integrity-results/
+poc-loadtest-results/
+results/
 
 # Channel-specific config (contain tokens)
 *-ch[0-9]*.yaml

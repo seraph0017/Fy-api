@@ -1,0 +1,72 @@
+# Unified channel/model benchmark config.
+#
+# Daily usage should start here:
+#   fy-benchmark -c benchmark.local.yaml --dry-run
+#   fy-benchmark -c benchmark.local.yaml
+#
+# Copy this file to benchmark.local.yaml and keep real tokens out of git.
+
+gateway:
+  # CN providers usually use cn-test. Overseas providers usually use hk-test.
+  base_url: "${FY_API_URL:-https://api-test.tracenex.cn}"
+  tokens:
+    # Real benchmark traffic. Must be an admin user's sk key for channel pinning.
+    user: "${FY_API_USER_TOKEN}"
+
+    # Optional; fy-smoke uses this only to query channel metadata.
+    # This is the web/admin access token, not an sk key.
+    admin: "${FY_API_ADMIN_TOKEN:-}"
+    admin_user_id: "${FY_API_ADMIN_USER_ID:-1}"
+
+    # Optional. Disabled by default; set these only when enabling judge/embedding.
+    judge: "${FY_API_JUDGE_TOKEN:-}"
+    embedding: "${FY_API_EMBEDDING_TOKEN:-}"
+    secondary: "${FY_API_SECONDARY_TOKEN:-}"
+
+target:
+  channel_id: 42
+  channel_name: "channel-42"
+  # baseline_channel_id enables canary baseline/audit in strict/deep mode.
+  # baseline_channel_id: 12
+  models:
+    - id: "gpt-4o-mini"
+      type: text
+      backend: openai
+    # - id: "gpt-image-1"
+    #   type: image
+    # - id: "veo-3.1"
+    #   type: video
+
+profile:
+  # quick: fast triage
+  # standard: normal channel acceptance test
+  # strict: higher bar, more weakness-oriented
+  # deep: expensive checks when judge/embedding/canary are configured
+  mode: standard
+  parallel_models: 1
+  output_dir: benchmark-runs
+  formats: [json, csv, markdown]
+
+modules:
+  smoke: true
+  loadtest: true
+  quality: true
+  conformance: true
+  integrity: true
+  canary: false
+  image_loadtest: true
+  image_conformance: true
+  image_canary: false
+  video: false
+
+judge:
+  # Default is disabled: fy-quality will run deterministic graders only.
+  enabled: false
+  base_url: "${FY_API_URL:-https://api-test.tracenex.cn}"
+  model: "claude-haiku-4-5-20251001"
+
+embedding:
+  # Default is disabled: similarity/drift probes are skipped.
+  enabled: false
+  base_url: "${FY_API_URL:-https://api-test.tracenex.cn}"
+  model: "text-embedding-v1"

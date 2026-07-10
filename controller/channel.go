@@ -1031,10 +1031,27 @@ func UpdateChannel(c *gin.Context) {
 	if channel.Key != "" && channel.Key != originChannel.Key {
 		changedFields = append(changedFields, "key")
 	}
+	// Fy-api overlay: keep priority/weight before-after data in audit logs so
+	// production routing investigations do not depend on short-lived binlogs.
+	changedFields, selectionAudit := buildChannelUpdateAuditSelectionDetails(channel.Channel, *originChannel, changedFields)
+	common.SysLog(fmt.Sprintf(
+		"channel update selection audit: id=%d name=%s priority=%d->%d weight=%d->%d status=%d->%d group_changed=%t models_changed=%t",
+		channel.Id,
+		channel.Name,
+		originChannel.GetPriority(),
+		channel.GetPriority(),
+		originChannel.GetWeight(),
+		channel.GetWeight(),
+		originChannel.Status,
+		channel.Status,
+		channel.Group != originChannel.Group,
+		channel.Models != originChannel.Models,
+	))
 	recordManageAudit(c, "channel.update", map[string]interface{}{
 		"id":             channel.Id,
 		"name":           channel.Name,
 		"changed_fields": changedFields,
+		"selection":      selectionAudit,
 	})
 	channel.Key = ""
 	clearChannelInfo(&channel.Channel)
@@ -1055,6 +1072,29 @@ func equalStringPtr(a, b *string) bool {
 		return false
 	}
 	return *a == *b
+}
+
+func buildChannelUpdateAuditSelectionDetails(channel model.Channel, originChannel model.Channel, changedFields []string) ([]string, map[string]interface{}) {
+	if channel.GetPriority() != originChannel.GetPriority() {
+		changedFields = append(changedFields, "priority")
+	}
+	if channel.GetWeight() != originChannel.GetWeight() {
+		changedFields = append(changedFields, "weight")
+	}
+	return changedFields, map[string]interface{}{
+		"before": channelSelectionAuditSnapshot(originChannel),
+		"after":  channelSelectionAuditSnapshot(channel),
+	}
+}
+
+func channelSelectionAuditSnapshot(channel model.Channel) map[string]interface{} {
+	return map[string]interface{}{
+		"status":   channel.Status,
+		"group":    channel.Group,
+		"models":   channel.Models,
+		"priority": channel.GetPriority(),
+		"weight":   channel.GetWeight(),
+	}
 }
 
 func FetchModels(c *gin.Context) {

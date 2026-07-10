@@ -1,6 +1,6 @@
 """
 Combined benchmark report generator (v2).
-Reads results from go benchmark, fy-loadtest (4 models), fy-quality (4 models x 2 channels),
+Reads results from fy-smoke, fy-loadtest (4 models), fy-quality (4 models x 2 channels),
 fy-conformance (4 models x 2 channels), plus fab CN server logs, and produces a
 single PDF comparing the two channels across all 4 Claude models.
 """
@@ -71,7 +71,7 @@ MODEL_SHORT = {
 
 # ── input file paths ──────────────────────────────────────────────────────────
 BASE = Path(__file__).parent
-GO_JSON = Path("/Users/jimmy/go/src/Fy-api/scripts/channel-benchmark/go/benchmark-results/benchmark_2026-05-15_00-20-31.json")
+SMOKE_JSON = BASE / "smoke-results/benchmark_2026-05-15_00-20-31.json"
 LT_FILES = {
     "claude-haiku-4-5-20251001": BASE / "loadtest-results/loadtest_combined_claude-haiku-4-5-20251001.json",
     "claude-sonnet-4-6":          BASE / "loadtest-results/loadtest_combined_claude-sonnet-4-6.json",
@@ -96,6 +96,27 @@ OUT_PDF = BASE / f"reports/combined-report-{datetime.now(timezone.utc).strftime(
 def _load(p: Path):
     with open(p, encoding="utf-8") as f:
         return json.load(f)
+
+
+def _smoke_field(row: dict, snake: str, legacy: str, default=None):
+    return row.get(snake, row.get(legacy, default))
+
+
+def _smoke_stat(row: dict, stat: str, snake: str, legacy: str, default=None):
+    block = row.get(stat.lower()) or row.get(stat.upper()) or {}
+    return block.get(snake, block.get(legacy, default))
+
+
+def _smoke_rows(smoke_data: dict):
+    return smoke_data.get("results", [])
+
+
+def _smoke_match(row: dict, channel_id: int, model: str, streamed: bool) -> bool:
+    return (
+        _smoke_field(row, "channel_id", "ChannelID") == channel_id
+        and _smoke_field(row, "model", "Model") == model
+        and _smoke_field(row, "streamed", "Streamed") == streamed
+    )
 
 
 def _styles():
@@ -173,10 +194,10 @@ def _cover(s):
              "haiku-4-5, sonnet-4-6,\nopus-4-6, opus-4-7"],
         ], colWidths=[5*cm, 1.5*cm, 5*cm, 6*cm], style=_tbl_style()),
         Spacer(1, 0.4*cm),
-        _p("测试套件（go + py × 4）", "H3", s),
+        _p("测试套件（Python × 5）", "H3", s),
         Table([
             ["工具", "覆盖范围", "本次执行"],
-            ["go channel-benchmark", "Smoke 连通性 + p50/p95 延迟 (stream/non-stream)",
+            ["fy-smoke", "Smoke 连通性 + p50/p95 延迟 (stream/non-stream)",
              "✅ 4 模型 × 2 渠道 × 2 模式 × 3 reps = 48 请求"],
             ["fy-loadtest", "并发负载 + auto-ramp 吞吐量峰值",
              "✅ 4 模型 × 2 渠道 × 多并发级（每级 20 请求）"],
@@ -194,17 +215,17 @@ def _cover(s):
 
 
 # ── section 2: executive summary ─────────────────────────────────────────────
-def _exec_summary(s, go_data, lt_by_model, qa_by_ch_model, cf_by_ch_model):
+def _exec_summary(s, smoke_data, lt_by_model, qa_by_ch_model, cf_by_ch_model):
     rows = [["维度", "模型", CH26, CH30, "胜出"]]
 
-    def _go_p95(ch_id, model):
-        for r in go_data["results"]:
-            if r["ChannelID"] == ch_id and r["Model"] == model and r["Streamed"]:
-                return r["E2E"]["P95Ms"]
+    def _smoke_p95(ch_id, model):
+        for r in _smoke_rows(smoke_data):
+            if _smoke_match(r, ch_id, model, True):
+                return _smoke_stat(r, "e2e", "p95_ms", "P95Ms")
         return None
 
     for m in MODELS:
-        v26, v30 = _go_p95(26, m), _go_p95(30, m)
+        v26, v30 = _smoke_p95(26, m), _smoke_p95(30, m)
         if v26 is None or v30 is None:
             continue
         winner = CH26 if v26 < v30 else (CH30 if v30 < v26 else "平")
@@ -249,20 +270,21 @@ def _exec_summary(s, go_data, lt_by_model, qa_by_ch_model, cf_by_ch_model):
     ]
 
 
-# ── section 3: go benchmark ───────────────────────────────────────────────────
-def _go_section(s, go_data):
-    results = go_data["results"]
+# ── section 3: smoke benchmark ────────────────────────────────────────────────
+def _smoke_section(s, smoke_data):
+    results = _smoke_rows(smoke_data)
 
     def _row(ch_id, model, streamed):
         for r in results:
-            if r["ChannelID"] == ch_id and r["Model"] == model and r["Streamed"] == streamed:
-                e2e = r["E2E"]; ttft = r["TTFT"]
-                return [r["ChannelName"], MODEL_SHORT.get(model, model),
+            if _smoke_match(r, ch_id, model, streamed):
+                return [_smoke_field(r, "channel_name", "ChannelName"), MODEL_SHORT.get(model, model),
                         "stream" if streamed else "non-stream",
-                        f"{r['OK']}/{r['Total']}",
-                        f"{r['SuccessRatePct']:.0f}%",
-                        f"{e2e['P50Ms']:.0f}", f"{e2e['P95Ms']:.0f}",
-                        f"{ttft['P95Ms']:.0f}" if ttft["Samples"] > 0 else "—"]
+                        f"{_smoke_field(r, 'ok', 'OK')}/{_smoke_field(r, 'total', 'Total')}",
+                        f"{_smoke_field(r, 'success_rate_pct', 'SuccessRatePct'):.0f}%",
+                        f"{_smoke_stat(r, 'e2e', 'p50_ms', 'P50Ms'):.0f}",
+                        f"{_smoke_stat(r, 'e2e', 'p95_ms', 'P95Ms'):.0f}",
+                        f"{_smoke_stat(r, 'ttft', 'p95_ms', 'P95Ms'):.0f}"
+                        if _smoke_stat(r, 'ttft', 'samples', 'Samples', 0) > 0 else "—"]
         return None
 
     header = ["渠道", "模型", "模式", "OK/Total", "成功率",
@@ -278,10 +300,10 @@ def _go_section(s, go_data):
     fig, ax = plt.subplots(figsize=(9, 4))
     x = np.arange(len(MODELS))
     w = 0.35
-    v26 = [next((r["E2E"]["P95Ms"] for r in results
-                 if r["ChannelID"] == 26 and r["Model"] == m and r["Streamed"]), 0) for m in MODELS]
-    v30 = [next((r["E2E"]["P95Ms"] for r in results
-                 if r["ChannelID"] == 30 and r["Model"] == m and r["Streamed"]), 0) for m in MODELS]
+    v26 = [next((_smoke_stat(r, "e2e", "p95_ms", "P95Ms") for r in results
+                 if _smoke_match(r, 26, m, True)), 0) for m in MODELS]
+    v30 = [next((_smoke_stat(r, "e2e", "p95_ms", "P95Ms") for r in results
+                 if _smoke_match(r, 30, m, True)), 0) for m in MODELS]
     ax.bar(x - w/2, v26, w, label="ch26 概泽", color=C1, alpha=0.85)
     ax.bar(x + w/2, v30, w, label="ch30 1ApiKey", color=C2, alpha=0.85)
     ax.set_xticks(x)
@@ -650,15 +672,15 @@ def _fab_section(s):
     return elems
 
 
-def _scorecard_section(s, go_data, lt_by_model, qa_by_ch_model, cf_by_ch_model):
+def _scorecard_section(s, smoke_data, lt_by_model, qa_by_ch_model, cf_by_ch_model):
     cards: list[ChannelScorecard] = []
 
     for model in MODELS:
         for channel_id, channel_name in [(26, CH26), (30, CH30)]:
-            go_row = next(
+            smoke_row = next(
                 (
-                    r for r in go_data.get("results", [])
-                    if r.get("ChannelID") == channel_id and r.get("Model") == model and r.get("Streamed")
+                    r for r in _smoke_rows(smoke_data)
+                    if _smoke_match(r, channel_id, model, True)
                 ),
                 None,
             )
@@ -670,7 +692,7 @@ def _scorecard_section(s, go_data, lt_by_model, qa_by_ch_model, cf_by_ch_model):
                 channel_name=channel_name,
                 channel_id=channel_id,
                 model=model,
-                connectivity_rate=(go_row.get("SuccessRatePct", 0.0) / 100.0) if go_row else None,
+                connectivity_rate=(_smoke_field(smoke_row, "success_rate_pct", "SuccessRatePct", 0.0) / 100.0) if smoke_row else None,
                 ttft_p95_ms=lt_row.get("ttft_p95_low"),
                 e2e_p95_ms=lt_row.get("e2e_p95_low"),
                 throughput_toks=lt_row.get("levels", [{}])[0].get("per_request_tok_per_s", {}).get("avg") if lt_row.get("levels") else None,
@@ -711,7 +733,7 @@ def _scorecard_section(s, go_data, lt_by_model, qa_by_ch_model, cf_by_ch_model):
 
 
 # ── section 8: final summary ─────────────────────────────────────────────────
-def _final_summary(s, go_data, lt_by_model, qa_by_ch_model, cf_by_ch_model):
+def _final_summary(s, smoke_data, lt_by_model, qa_by_ch_model, cf_by_ch_model):
     def _tally(metric_fn):
         wins = {CH26: 0, CH30: 0, "平": 0}
         for m in MODELS:
@@ -727,11 +749,11 @@ def _final_summary(s, go_data, lt_by_model, qa_by_ch_model, cf_by_ch_model):
                 wins[CH30] += 1
         return wins
 
-    def _go_metric(m):
-        v26 = next((r["E2E"]["P95Ms"] for r in go_data["results"]
-                    if r["ChannelID"] == 26 and r["Model"] == m and r["Streamed"]), None)
-        v30 = next((r["E2E"]["P95Ms"] for r in go_data["results"]
-                    if r["ChannelID"] == 30 and r["Model"] == m and r["Streamed"]), None)
+    def _smoke_metric(m):
+        v26 = next((_smoke_stat(r, "e2e", "p95_ms", "P95Ms") for r in _smoke_rows(smoke_data)
+                    if _smoke_match(r, 26, m, True)), None)
+        v30 = next((_smoke_stat(r, "e2e", "p95_ms", "P95Ms") for r in _smoke_rows(smoke_data)
+                    if _smoke_match(r, 30, m, True)), None)
         return (v26, v30, True) if v26 is not None and v30 is not None else None
 
     def _lt_metric(m):
@@ -753,7 +775,7 @@ def _final_summary(s, go_data, lt_by_model, qa_by_ch_model, cf_by_ch_model):
             return None
         return (a["pass_rate"], b["pass_rate"], False)
 
-    go_w = _tally(_go_metric)
+    go_w = _tally(_smoke_metric)
     lt_w = _tally(_lt_metric)
     qa_w = _tally(_qa_metric)
     cf_w = _tally(_cf_metric)
@@ -803,7 +825,7 @@ def _final_summary(s, go_data, lt_by_model, qa_by_ch_model, cf_by_ch_model):
 
 # ── main ──────────────────────────────────────────────────────────────────────
 def main():
-    go_data = _load(GO_JSON)
+    smoke_data = _load(SMOKE_JSON)
 
     lt_by_model = {}
     for m, p in LT_FILES.items():
@@ -833,10 +855,10 @@ def main():
     s = _styles()
     story = []
     story += _cover(s)
-    story += _final_summary(s, go_data, lt_by_model, qa_by_ch_model, cf_by_ch_model)
-    story += _scorecard_section(s, go_data, lt_by_model, qa_by_ch_model, cf_by_ch_model)
-    story += _exec_summary(s, go_data, lt_by_model, qa_by_ch_model, cf_by_ch_model)
-    story += _go_section(s, go_data)
+    story += _final_summary(s, smoke_data, lt_by_model, qa_by_ch_model, cf_by_ch_model)
+    story += _scorecard_section(s, smoke_data, lt_by_model, qa_by_ch_model, cf_by_ch_model)
+    story += _exec_summary(s, smoke_data, lt_by_model, qa_by_ch_model, cf_by_ch_model)
+    story += _smoke_section(s, smoke_data)
     story += _loadtest_section(s, lt_by_model)
     story += _quality_section(s, qa_data)
     story += _conformance_section(s, cf_by_ch_model)

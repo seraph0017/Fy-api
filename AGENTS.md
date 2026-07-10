@@ -213,32 +213,48 @@ Frontend i18n lives in `web/classic/src/i18n/` using `i18next` + `react-i18next`
 
 ## Channel benchmarking
 
-The `scripts/channel-benchmark/` directory is a self-contained toolkit for measuring channel liveness, load capacity, output quality, and model-substitution integrity. It is independent of the main backend (its own `go.mod` in `go/`, its own `pyproject.toml` in `py/`) so it can be run on any host that has network access to the gateway.
+The `scripts/channel-benchmark/` directory is a self-contained toolkit for measuring channel liveness, load capacity, output quality, and model-substitution integrity. It is independent of the main backend (its own `pyproject.toml` in `py/`) so it can be run on any host that has network access to the gateway.
+
+Daily full-channel testing should use the unified entry point:
+
+```bash
+cd scripts/channel-benchmark
+./install-env.sh --with-dev --with-tiktoken
+source py/.venv/bin/activate
+cd py
+cp benchmark.yaml benchmark.local.yaml
+fy-benchmark -c benchmark.local.yaml --dry-run
+fy-benchmark -c benchmark.local.yaml
+```
 
 Layout:
 
 ```text
 scripts/channel-benchmark/
-├── README.md                       top-level navigation (how Go and Python tools relate)
-├── go/                             zero-dep Go smoke + Prometheus exporter
-│   ├── main.go / runner.go / client.go / admin.go
-│   ├── prometheus.go               exposition-format daemon (no prom client dep)
-│   └── channel-benchmark.yaml
-└── py/                             three CLIs sharing one venv + JSONL schema
-    ├── pyproject.toml              entry points: fy-loadtest, fy-quality, fy-canary
-    ├── fy_loadtest/                concurrency-ramp load testing
-    ├── fy_quality/                 golden-JSONL quality scorecard + 7 graders + dual judge
-    │   ├── perturbation.py         deterministic contamination-defense perturbations
-    │   └── datasets/
-    │       ├── public/             starter suite (committed, assumed-memorized)
-    │       └── private/            user-private prompts (gitignored)
-    └── fy_canary/                  baseline + audit + verify-baseline
-        └── baseline.py             v2 schema w/ recorded_at_iso + health metadata
+├── README.md                       top-level navigation and directory structure
+├── RUNBOOK-channel-benchmark.md    full channel/model execution runbook
+├── install-env.sh                  local Python environment setup
+├── fixtures/                       deterministic local image/audio/video assets
+├── incidents/                      regression case cards
+└── py/                             CLIs sharing one venv + JSONL schema
+    ├── benchmark.yaml              single-entry config template
+    ├── pyproject.toml              entry points including fy-benchmark
+    ├── fy_benchmark/               orchestrator: generates child configs, runs modules, writes scorecard
+    ├── fy_smoke/                   liveness + TTFT/E2E smoke and Prometheus exporter
+    ├── fy_loadtest/                text concurrency-ramp load testing
+    ├── fy_quality/                 golden-JSONL quality scorecard; deterministic graders by default
+    ├── fy_conformance/             protocol/error-semantics assertions
+    ├── fy_integrity/               token inflation, cache, stream, tool-use, filtering probes
+    ├── fy_canary/                  baseline + audit + verify-baseline
+    ├── fy_image_loadtest/          image generation load testing
+    ├── fy_image_conformance/       image API/output/safety/perf checks
+    ├── fy_image_canary/            image authenticity/fingerprint checks
+    ├── fy_score/                   A/B/C/D/F scorecard aggregation
+    └── benchmark-runs/             generated run outputs
 ```
 
 Key invariants when working in this tree:
 
-- **Never rewrite the Go tool to depend on `prometheus/client_golang`.** The zero-dep exposition in `prometheus.go` is deliberate so the binary stays drop-on-prod.
 - **Never add brand words (TraceNex / Fy-api) to the starter `public/quality.jsonl`.** It is the ONLY dataset meant to be committed; keeping it brand-neutral avoids the file being a signal leak.
 - **Never bypass `row.wire_prompt()` in the quality runner.** Perturbations must be applied before hitting the channel, and the cache key must be derived from the perturbed text so schema changes invalidate caches reliably.
 - **Never have a channel judge its own output in `fy-quality`.** Judges are configured independently from channels — keep it that way.
@@ -247,23 +263,26 @@ Key invariants when working in this tree:
 Commands:
 
 ```bash
-# Smoke / Prometheus
-cd scripts/channel-benchmark/go
-go test -race ./...                  # full Go test suite
-go run . -config channel-benchmark.yaml                        # one-shot
-go run . -config channel-benchmark.yaml -prom-listen :9090 -prom-interval 5m   # daemon
-
-# Python tools
 cd scripts/channel-benchmark/py
-uv venv --python 3.13 .venv
-uv pip install --python .venv/bin/python -e ".[dev]"
 source .venv/bin/activate
-pytest                               # all 47 tests (loadtest + quality + canary)
+
+# Full suite from one config
+fy-benchmark -c benchmark.local.yaml --dry-run
+fy-benchmark -c benchmark.local.yaml
+
+# Single-module debugging
+fy-smoke -c smoke.yaml
+fy-smoke -c smoke.yaml --prom-listen :9090 --prom-interval 5m
 fy-loadtest -c loadtest.yaml
 fy-quality  -c quality.yaml
+fy-conformance -c conformance.yaml
+fy-integrity run -c integrity.yaml
 fy-canary   baseline         -c canary.yaml
 fy-canary   audit            -c canary.yaml
 fy-canary   verify-baseline  -c canary.yaml
+
+# Offline tests
+pytest
 ```
 
 When extending this toolkit, log the change in `OVERLAY.md` entry **B-7** (same file that tracks all TraceNex customizations) so the next upstream sync doesn't lose context.
