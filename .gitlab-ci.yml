@@ -67,7 +67,7 @@ deploy_cn_test:
   script:
     - echo ">>> 部署到 国内测试环境 [$DEPLOY_HOST]..."
     - |
-      ssh -o StrictHostKeyChecking=no -p 58422 "$DEPLOY_USER@$DEPLOY_HOST" << 'EOF'
+      ssh -o StrictHostKeyChecking=no -p 58422 "$DEPLOY_USER@$DEPLOY_HOST" << EOF
         set -e
         echo "[远程] 登录阿里云 ACR..."
         echo "$ALIYUN_REGISTRY_PASSWORD" | docker login "$ALIYUN_REGISTRY" -u "$ALIYUN_REGISTRY_USER" --password-stdin
@@ -117,7 +117,7 @@ deploy_global_test:
   script:
     - echo ">>> 部署到 国外测试环境 [$DEPLOY_HOST]..."
     - |
-      ssh -o StrictHostKeyChecking=no -p 58422 "$DEPLOY_USER@$DEPLOY_HOST" << 'EOF'
+      ssh -o StrictHostKeyChecking=no -p 58422 "$DEPLOY_USER@$DEPLOY_HOST" << EOF
         set -e
         echo "$ALIYUN_REGISTRY_PASSWORD" | docker login "$ALIYUN_REGISTRY" -u "$ALIYUN_REGISTRY_USER" --password-stdin
         docker pull "$IMAGE_NAME:$CI_COMMIT_SHA"
@@ -153,7 +153,7 @@ deploy_cn_prod:
   script:
     - echo ">>> 部署到 国内生产环境 [$DEPLOY_HOST]..."
     - |
-      ssh -o StrictHostKeyChecking=no -p 58422 "$DEPLOY_USER@$DEPLOY_HOST" << 'EOF'
+      ssh -o StrictHostKeyChecking=no -p 58422 "$DEPLOY_USER@$DEPLOY_HOST" << EOF
         set -e
         echo "$ALIYUN_REGISTRY_PASSWORD" | docker login "$ALIYUN_REGISTRY" -u "$ALIYUN_REGISTRY_USER" --password-stdin
         docker pull "$IMAGE_NAME:$CI_COMMIT_SHA"
@@ -189,7 +189,7 @@ deploy_global_prod:
   script:
     - echo ">>> 部署到 国外生产环境 [$DEPLOY_HOST]..."
     - |
-      ssh -o StrictHostKeyChecking=no -p 58422 "$DEPLOY_USER@$DEPLOY_HOST" << 'EOF'
+      ssh -o StrictHostKeyChecking=no -p 58422 "$DEPLOY_USER@$DEPLOY_HOST" << EOF
         set -e
         echo "$ALIYUN_REGISTRY_PASSWORD" | docker login "$ALIYUN_REGISTRY" -u "$ALIYUN_REGISTRY_USER" --password-stdin
         docker pull "$IMAGE_NAME:$CI_COMMIT_SHA"
