@@ -102,6 +102,8 @@ Follow `docs/Weekly-upstream-sync-runbook.md` for the weekly merge flow and the 
 
 When creating a PR for the user, use a separate git worktree for the PR branch instead of switching the main worktree away from its current branch. This keeps the user's active workspace, IDE state, and untracked files undisturbed.
 
+Default to the `origin3` remote (`https://gitlab.tracenex.cn/tracenex/fy-api.git`) for TraceNex-owned branch pushes, fetches, PR merge/sync operations, and post-merge cleanup unless the user explicitly asks for another remote. Use `origin`/GitHub only for workflows that must interact with GitHub-hosted PRs, such as `gh pr create`, `gh pr view`, or updating an already-open GitHub PR branch; when both remotes need the same branch, push `origin3` first and mirror to `origin` only as needed.
+
 ```bash
 git worktree add ../fy-api-pr-<name> -b <branch-name> develop
 cd ../fy-api-pr-<name>

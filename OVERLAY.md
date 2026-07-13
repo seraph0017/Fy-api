@@ -663,6 +663,16 @@
 - **冲突风险**：中（该编辑器是 upstream 设置页活跃区域）
 - **Merge 策略**：若 upstream 重构模型价格编辑器，保留“UI 输入币种可选但 option 始终 USD”的存储语义，换算继续复用 `usd_exchange_rate`。
 
+### F-9 [playground] 操练场默认参数兼容
+- **修改文件**：
+  - `web/classic/src/constants/playground.constants.js`（默认关闭 `temperature` / `top_p` / `frequency_penalty` / `presence_penalty` / `max_tokens` / `seed`）
+  - `web/classic/src/components/playground/configStorage.js`（保存配置时写入 `playgroundConfigVersion=2`；加载旧配置时，如果 `temperature=0.7`、`top_p=1`、`frequency_penalty=0`、`presence_penalty=0` 仍是旧默认值，则自动关闭这些可选参数）
+  - `web/classic/src/components/playground/configStorage.test.js`（覆盖新默认值、旧默认配置迁移、自定义值保留）
+- **背景**：用户在操练场测试 AWS Bedrock、Codex/Responses 类模型和部分中转站时，经常因为旧默认参数被拒绝。Upstream `#6044` 给 `web/default` 新增参数面板，`#5807` 也指出默认同时发送 `temperature + top_p` 会导致部分 upstream provider 拒绝；TraceNex 只 ship `web/classic`，需要在 classic 路径单独收敛默认请求参数。
+- **行为**：新用户和重置后的操练场默认不发送采样/惩罚/长度/seed 参数。老用户如果只是沿用旧默认值，会被迁移到同样的保守默认；如果已经把 `temperature`、`top_p` 或 penalty 调成非默认值，则视为用户显式配置并保留启用状态。
+- **冲突风险**：低（classic 操练场常量和 localStorage merge 逻辑小范围修改）
+- **Merge 策略**：如果 upstream 后续把 `web/default` 的参数面板或默认开关 port 回 classic，保留“默认少发可选参数；用户显式开启才发送”的语义。
+
 ---
 
 ## 不 port 的 TraceNex 改动（技术债 / 已失效 / 上游已取代）
