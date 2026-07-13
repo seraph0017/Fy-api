@@ -11,7 +11,7 @@ func SessionOptions() sessions.Options {
 		Path:     "/",
 		MaxAge:   2592000, // 30 days
 		HttpOnly: true,
-		Secure:   false,
+		Secure:   SessionCookieSecure,
 		SameSite: http.SameSiteStrictMode,
 	}
 	// Fy-api overlay: allow api/www alias domains to share browser sessions during migration.

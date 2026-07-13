@@ -14,10 +14,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func init() {
+	gin.SetMode(gin.TestMode)
+}
+
 func TestDoAwsClientRequest_AppliesRuntimeHeaderOverrideToAnthropicBeta(t *testing.T) {
 	t.Parallel()
 
-	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
@@ -58,7 +61,6 @@ func TestDoAwsClientRequest_AppliesRuntimeHeaderOverrideToAnthropicBeta(t *testi
 func TestDoAwsClientRequest_FiltersAnthropicBetaForBedrockCompatibility(t *testing.T) {
 	t.Parallel()
 
-	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
@@ -99,7 +101,6 @@ func TestDoAwsClientRequest_FiltersAnthropicBetaForBedrockCompatibility(t *testi
 func TestDoAwsClientRequest_DropsAnthropicBetaWhenNoBedrockCompatibleTokensRemain(t *testing.T) {
 	t.Parallel()
 
-	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
@@ -136,7 +137,6 @@ func TestDoAwsClientRequest_DropsAnthropicBetaWhenNoBedrockCompatibleTokensRemai
 func TestDoAwsClientRequest_DropsBodyAnthropicBetaForBedrockCompatibility(t *testing.T) {
 	t.Parallel()
 
-	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
@@ -169,7 +169,6 @@ func TestDoAwsClientRequest_DropsBodyAnthropicBetaForBedrockCompatibility(t *tes
 func TestBuildAwsRequestBodyPassThroughSanitizesBedrockOnlyFields(t *testing.T) {
 	t.Parallel()
 
-	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
 	body := []byte(`{"model":"claude-3-5-sonnet-20240620","stream":true,"messages":[{"role":"user","content":"hello"}],"max_tokens":128,"anthropic_beta":["fine-grained-tool-streaming-2025-05-14"],"output_config":{"format":{"type":"json_schema"}}}`)

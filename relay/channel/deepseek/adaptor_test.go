@@ -14,6 +14,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func init() {
+	gin.SetMode(gin.TestMode)
+}
+
 func TestApplyDeepSeekV4OpenAIThinkingSuffix(t *testing.T) {
 	t.Parallel()
 
@@ -106,7 +110,6 @@ func TestNormalizeDeepSeekOpenAIRequestForUpstream(t *testing.T) {
 func TestDeepSeekConvertClaudeRequestUsesOpenAIChatBridge(t *testing.T) {
 	t.Parallel()
 
-	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
@@ -151,7 +154,6 @@ func TestDeepSeekConvertClaudeRequestUsesOpenAIChatBridge(t *testing.T) {
 func TestDeepSeekConvertResponsesRequestUsesOpenAIChatBridge(t *testing.T) {
 	t.Parallel()
 
-	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
@@ -204,7 +206,6 @@ func TestDeepSeekConvertResponsesRequestUsesOpenAIChatBridge(t *testing.T) {
 func TestDeepSeekConvertResponsesRequestNormalizesUnsupportedRoles(t *testing.T) {
 	t.Parallel()
 
-	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
@@ -487,7 +488,6 @@ func TestDeepSeekChatCompletionsNamespacedToolCallToResponsesResponse(t *testing
 func TestDeepSeekResponsesStreamStateAccumulatesToolCalls(t *testing.T) {
 	t.Parallel()
 
-	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
