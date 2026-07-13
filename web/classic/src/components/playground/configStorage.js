@@ -23,6 +23,42 @@ import {
 } from '../../constants/playground.constants';
 
 const MESSAGES_STORAGE_KEY = 'playground_messages';
+const PLAYGROUND_CONFIG_VERSION = 2;
+const LEGACY_DEFAULT_OPTIONAL_PARAMETERS = {
+  temperature: 0.7,
+  top_p: 1,
+  frequency_penalty: 0,
+  presence_penalty: 0,
+};
+
+const isLegacyDefaultParameterValue = (value, defaultValue) => {
+  if (value === undefined || value === null || value === '') {
+    return false;
+  }
+
+  return Number(value) === defaultValue;
+};
+
+const migrateLegacyParameterEnabled = (parsedConfig, parameterEnabled) => {
+  if (parsedConfig.playgroundConfigVersion >= PLAYGROUND_CONFIG_VERSION) {
+    return parameterEnabled;
+  }
+
+  const migrated = { ...parameterEnabled };
+
+  Object.entries(LEGACY_DEFAULT_OPTIONAL_PARAMETERS).forEach(
+    ([key, defaultValue]) => {
+      if (
+        parsedConfig.parameterEnabled?.[key] === true &&
+        isLegacyDefaultParameterValue(parsedConfig.inputs?.[key], defaultValue)
+      ) {
+        migrated[key] = false;
+      }
+    },
+  );
+
+  return migrated;
+};
 
 /**
  * 保存配置到 localStorage
@@ -32,6 +68,7 @@ export const saveConfig = (config) => {
   try {
     const configToSave = {
       ...config,
+      playgroundConfigVersion: PLAYGROUND_CONFIG_VERSION,
       timestamp: new Date().toISOString(),
     };
     localStorage.setItem(STORAGE_KEYS.CONFIG, JSON.stringify(configToSave));
@@ -67,18 +104,23 @@ export const loadConfig = () => {
       const parsedConfig = JSON.parse(savedConfig);
       const parsedMaxTokens = parseInt(parsedConfig?.inputs?.max_tokens, 10);
 
+      const inputs = {
+        ...DEFAULT_CONFIG.inputs,
+        ...parsedConfig.inputs,
+        max_tokens: Number.isNaN(parsedMaxTokens)
+          ? parsedConfig?.inputs?.max_tokens
+          : parsedMaxTokens,
+      };
+      const parameterEnabled = migrateLegacyParameterEnabled(parsedConfig, {
+        ...DEFAULT_CONFIG.parameterEnabled,
+        ...parsedConfig.parameterEnabled,
+      });
+
+      // Fy-api overlay: migrate old persisted playground defaults so legacy
+      // clients stop sending optional parameters that many upstreams reject.
       const mergedConfig = {
-        inputs: {
-          ...DEFAULT_CONFIG.inputs,
-          ...parsedConfig.inputs,
-          max_tokens: Number.isNaN(parsedMaxTokens)
-            ? parsedConfig?.inputs?.max_tokens
-            : parsedMaxTokens,
-        },
-        parameterEnabled: {
-          ...DEFAULT_CONFIG.parameterEnabled,
-          ...parsedConfig.parameterEnabled,
-        },
+        inputs,
+        parameterEnabled,
         showDebugPanel:
           parsedConfig.showDebugPanel || DEFAULT_CONFIG.showDebugPanel,
         customRequestMode:

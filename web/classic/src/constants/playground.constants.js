@@ -96,11 +96,12 @@ export const DEFAULT_CONFIG = {
     imageUrls: [''],
   },
   parameterEnabled: {
-    temperature: true,
-    top_p: true,
+    // Fy-api overlay: keep playground defaults conservative for provider compatibility.
+    temperature: false,
+    top_p: false,
     max_tokens: false,
-    frequency_penalty: true,
-    presence_penalty: true,
+    frequency_penalty: false,
+    presence_penalty: false,
     seed: false,
   },
   systemPrompt: '',
