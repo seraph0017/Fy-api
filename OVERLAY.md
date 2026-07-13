@@ -86,7 +86,7 @@
 - **修改文件**：`common/constants.go`、`common/init.go`、`common/session.go`、`main.go`、`config/fy-api.env.example`
 - **新增测试**：`common/session_test.go::TestSessionOptionsCookieDomain`
 - **背景**：HK 生产同时保留 `api.aitracenex.com` 和 `www.aitracenex.com` 入口。浏览器默认 host-only session cookie 导致用户在一个子域登录后跳到另一个子域时看起来像“自动退出”。
-- **行为**：新增 `SESSION_COOKIE_DOMAIN` 环境变量；默认空值保持 upstream host-only 行为。生产可设置为 `.aitracenex.com`，让 `api` / `www` 子域共享同一份 session cookie，迁移期内两个入口都可继续访问；已登录老用户访问原域名时会重新签发共享域 cookie，降低切到主域时掉登录的概率。
+- **行为**：新增 `SESSION_COOKIE_DOMAIN` 环境变量；默认空值保持 upstream host-only 行为。生产可设置为 `.aitracenex.com`，让 `api` / `www` 子域共享同一份 session cookie，迁移期内两个入口都可继续访问；已登录老用户访问原域名时会重新签发共享域 cookie，降低切到主域时掉登录的概率。登录成功时会额外下发一个不带 `Domain` 的过期 `session` cookie，用于清除迁移前浏览器残留的 host-only cookie，避免同名旧 cookie 排在共享域 cookie 前面导致 `New-Api-User` 与 session 用户不匹配。
 - **冲突风险**：低（`main.go` session options 小范围抽函数；默认行为不变）
 - **Merge 策略**：若 upstream 后续支持 session cookie domain，优先采用 upstream 配置名；保留空值 host-only、显式 `.aitracenex.com` 共享的语义。
 
@@ -551,11 +551,12 @@
 - **修改文件**：
   - `service/error.go`：`RelayErrorHandler` 在非 2xx 响应读 body 后，把上游 host、status、白名单 header 和 1KB body preview 写入 `NewAPIError.Metadata.upstream_debug`
   - `controller/relay.go`：`processChannelError` 写 error log 时把 `Metadata.upstream_debug` 合并到 `logs.other.admin_info.upstream_debug`（普通用户自助日志会剥离 `admin_info`）
+  - `docs/api-reference.html`、`web/classic/public/product-docs/api-reference.html`：补充 Chat/Responses/Gemini Native 多模态理解输入中图片、文档、视频的上传数量、大小和格式限制备注，并在图片生成文档中补充 Gemini / Nano Banana 与 GPT Image 在 `images` 参考图数量上的差异说明
 - **新增测试**：
   - `service/error_test.go`：验证 504 响应会记录白名单 header、host、截断 body preview，且不记录 `Authorization`
   - `controller/relay_error_metadata_test.go`：验证 error metadata 只把 `upstream_debug` 合并进日志 other
-- **行为**：不改日志表结构，不向普通响应增加字段；只在 error log 的 `other.admin_info` JSON 中保留受控诊断信息。
-- **冲突风险**：低（两处小函数，均带 `// Fy-api overlay:` 注释）
+- **行为**：不改日志表结构，不向普通响应增加字段；只在 error log 的 `other.admin_info` JSON 中保留受控诊断信息。文档更新仅影响产品文档展示，不改变运行时协议。
+- **冲突风险**：低（两处小函数，均带 `// Fy-api overlay:` 注释；文档变更需在 `docs/api-reference.html` 与 classic public 文档之间保持同步）
 
 ### B-33 [audit] 渠道更新记录 priority/weight before-after
 
@@ -566,6 +567,18 @@
   - `controller/channel_update_audit_test.go`
 - **行为**：不记录 key/base_url 等敏感连接信息；只记录影响渠道选择的非敏感字段，便于后续从 `logs.other.op.params.selection` 或容器服务日志还原保存值。
 - **冲突风险**：低（`controller/channel.go` 的渠道更新审计区域是上游可能改动点；merge 时保留 selection audit 语义即可）
+
+### B-34 [gemini] Image-preview OpenAI Images response and size compatibility
+
+- **问题**：Gemini image-preview / Nano Banana 模型通过 `generateContent` 返回 `inlineData` 和 `usageMetadata`，TraceNex 转成 OpenAI Images 响应时只返回 `created`/`data`，没有透出 `usage`；同时 `size:"1024x1024"` 没有映射到 Gemini `imageConfig.aspectRatio`，上游可能按默认比例返回 16:9。
+- **修改文件**：
+  - `dto/openai_image.go`：`ImageResponse` 新增可选 `usage` 字段，用于与 GPT Image 的响应结构对齐
+  - `relay/channel/gemini/chat_image_handler.go`：把 Gemini `usageMetadata` 转为 OpenAI Images 风格 usage，并写入响应 JSON；同时保留返回给计费流程的 `dto.Usage`
+  - `relay/channel/gemini/adaptor.go`：`processGeminiImageSizeParameters` 将正方形尺寸映射为 `aspectRatio:"1:1"`，并分开处理 `imageSize`；`isGeminiImagePreviewModel` 增加 `nano-banana*` 别名识别
+  - `docs/api-reference.html`、`web/classic/public/product-docs/api-reference.html`：补充 Gemini / Nano Banana 与 GPT Image 在 `images` 数量、`size`、`quality`、`response_format` 等字段上的差异说明；同时补充 Chat/Responses/Gemini Native 多模态理解输入中图片、文档、视频的上传数量、大小和格式限制备注
+- **新增测试**：`relay/channel/gemini/relay_gemini_usage_test.go`：覆盖 `1024x1024` generation/edit 均转为 `1:1`，以及 Gemini image-preview 响应包含 root `usage.input_tokens` / `usage.output_tokens` / `usage.total_tokens`
+- **行为**：仅影响 Gemini image-preview / Nano Banana 的 OpenAI Images 兼容路径；不改变 OpenAI/GPT Image、Imagen、chat 路线。
+- **冲突风险**：低（新增 DTO 可选字段；Gemini adapter 内局部映射；静态 API 文档同步）
 
 ---
 
@@ -581,8 +594,9 @@
 
 ### F-2 [brand] Logo 和 favicon
 - **新增**：`web/classic/public/new_logo.png` (3.4 MB)
-- **替换**：`web/classic/public/favicon.ico`
-- **冲突风险**：低（上游偶尔更新 logo.png，我们用 new_logo.png 独立）
+- **替换**：`web/classic/public/favicon.ico`、`web/classic/public/logo.png`
+- **原因**：前端在后台 `Logo` 配置为空时会 fallback 到 `/logo.png`；该文件必须是 TraceNex 默认图标，避免回退显示 upstream New API logo。
+- **冲突风险**：低（上游偶尔更新 logo.png，merge 时保留 TraceNex 版本）
 - **注意**：v1.0 merge 时 git 的 directory-rename 启发式会把 public 资源建议到 `web/default/public/`，**必须手动改到 `web/classic/public/`**
 
 ### F-3 [i18n] 品牌词替换
@@ -612,9 +626,10 @@
 - **修改文件**：`web/classic/src/App.jsx`
   - 第 ~59 行：`const FyApiDocs = lazy(() => import('./pages/FyApiDocs'));`
   - 第 ~365 行：`<Route path='/docs' element={<Suspense>...</Suspense>} />`
+- **修改文件**：`router/web-router.go`（`// Fy-api overlay:`：服务端直接把 `/docs`、`/docs/`、`/docs/api-reference.html` 映射到 `product-docs/api-reference.html`，让 `/docs` 成为 canonical 文档地址，避免直连时只返回 SPA shell）
 - **修改文件**：`web/classic/src/components/layout/PageLayout.jsx`（`/docs` 路径使用 early return 跳过 Header/Footer 包装，作为独立页面渲染）
-- **冲突风险**：低（App.jsx 两处小改，Suspense pattern 和 upstream 一致；PageLayout.jsx 只新增 `isDocsRoute` 检查 + early return）
-- **注意**：物理目录必须是 `product-docs/` 而不是 `docs/`，否则与 SPA 路由 `/docs` 冲突（static 中间件 301 到尾斜杠，前端路由再 301 去掉斜杠 → 死循环）。产品文档内图片路径全部用绝对路径 `/product-docs/images/...`。
+- **冲突风险**：低（App.jsx 两处小改，Suspense pattern 和 upstream 一致；PageLayout.jsx 只新增 `isDocsRoute` 检查 + early return；web router 只新增 3 个显式 GET 路由）
+- **注意**：物理目录必须保留为 `product-docs/`，`/docs` 只作为服务端 canonical 入口和兼容路由。产品文档内图片路径全部用绝对路径 `/product-docs/images/...`。
 
 ### F-5 [csv-export] 日志页 "导出 CSV" 按钮
 - **新增文件**：`web/classic/src/components/table/usage-logs/UsageLogsExportButton.jsx`

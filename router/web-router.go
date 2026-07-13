@@ -29,6 +29,16 @@ func SetWebRouter(router *gin.Engine, assets ThemeAssets) {
 	router.Use(gzip.Gzip(gzip.DefaultCompression))
 	router.Use(middleware.GlobalWebRateLimit())
 	router.Use(middleware.Cache())
+	// Fy-api overlay: keep /docs as the canonical product document URL instead
+	// of exposing the SPA shell before the iframe route loads.
+	serveProductDocs := func(c *gin.Context) {
+		c.Set(middleware.RouteTagKey, "web")
+		c.Header("Cache-Control", "no-cache")
+		c.FileFromFS("product-docs/api-reference.html", themeFS)
+	}
+	router.GET("/docs", serveProductDocs)
+	router.GET("/docs/", serveProductDocs)
+	router.GET("/docs/api-reference.html", serveProductDocs)
 	router.Use(static.Serve("/", themeFS))
 	router.NoRoute(func(c *gin.Context) {
 		c.Set(middleware.RouteTagKey, "web")
