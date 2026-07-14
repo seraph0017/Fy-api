@@ -48,7 +48,7 @@ func ChatImageHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 		return nil, types.NewOpenAIError(errors.New("no images found in Gemini response"), types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 	}
 
-	usage := buildUsageFromGeminiMetadata(geminiResponse.UsageMetadata, info.GetEstimatePromptTokens())
+	usage := buildUsageFromGeminiMetadata(&geminiResponse.UsageMetadata, info.GetEstimatePromptTokens())
 	if usage.TotalTokens == 0 {
 		usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 	}

@@ -309,17 +309,17 @@ func TestApplyVideoPipelineSubmitSnapshotSeparatesUserBillingFromProviderCost(t 
 	info := &relaycommon.RelayInfo{
 		ChannelMeta: &relaycommon.ChannelMeta{ChannelId: 87},
 		PriceData: types.PriceData{
-			UsePrice:   true,
-			ModelPrice: 0.13698630137,
-			OtherRatios: map[string]float64{
-				"seedance_1080p": 46.0 / 28.0,
-			},
+			UsePrice:       true,
+			ModelPrice:     0.13698630137,
 			GroupRatioInfo: types.GroupRatioInfo{GroupRatio: 1},
 		},
 		TaskRelayInfo: &relaycommon.TaskRelayInfo{
 			VideoPipelinePlan: plan,
 		},
 	}
+	require.True(t, info.PriceData.ReplaceOtherRatios(map[string]float64{
+		"seedance_1080p": 46.0 / 28.0,
+	}))
 	task := &model.Task{Quota: 112524, PrivateData: model.TaskPrivateData{UpstreamTaskID: "generation-1"}}
 
 	ApplyVideoPipelineSubmitSnapshot(nil, task, info)

@@ -1,0 +1,213 @@
+# =============================================================================
+# GitLab CI/CD 配置 - fy-api 自动发布
+# Runner 类型: Shell Executor
+# 部署环境: 国内测试 / 国外测试 / 国内生产 / 国外生产
+# =============================================================================
+
+stages:
+  - build      # 构建 Docker 镜像
+  - push       # 推送到阿里云 ACR
+  - deploy     # 部署到目标服务器
+
+variables:
+  # 镜像完整路径，展开后类似:
+  # transnext-acr-ee-registry.cn-hangzhou.cr.aliyuncs.com/transnext/fy-api
+  IMAGE_NAME: "$ALIYUN_REGISTRY/$ALIYUN_NAMESPACE/fy-api"
+
+# =============================================================================
+# Stage 1: 构建镜像
+# =============================================================================
+build:
+  stage: build
+  # Shell Executor 不需要 image 和 services，直接调用宿主机的 docker
+  script:
+    - echo ">>> 开始构建镜像..."
+    - docker build -t "$IMAGE_NAME:$CI_COMMIT_SHA" -t "$IMAGE_NAME:latest" .
+    - echo ">>> 镜像构建完成"
+    - docker images | grep fy-api
+  rules:
+    # main 和 develop 分支提交时自动触发
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+
+# =============================================================================
+# Stage 2: 推送到阿里云 ACR
+# =============================================================================
+push:
+  stage: push
+  script:
+    - echo ">>> 登录阿里云 ACR..."
+    - echo "$ALIYUN_REGISTRY_PASSWORD" | docker login "$ALIYUN_REGISTRY" -u "$ALIYUN_REGISTRY_USER" --password-stdin
+    - echo ">>> 推送镜像..."
+    - docker push "$IMAGE_NAME:$CI_COMMIT_SHA"
+    - docker push "$IMAGE_NAME:latest"
+    - echo ">>> 推送完成"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+
+# =============================================================================
+# Stage 3: 部署到四个环境
+# 触发规则:
+#   1. 代码合并后默认显示"手动执行"按钮，可单独点击部署
+#   2. 通过 Web 手动触发 Pipeline 时，设置对应变量为 true 可自动执行
+# =============================================================================
+
+# -------------------- 国内测试环境 (develop 分支) --------------------
+deploy_cn_test:
+  stage: deploy
+  variables:
+    DEPLOY_HOST: "$DEPLOY_HOST_CN_TEST"
+  before_script:
+    # 配置 SSH 免密登录（Base64 解码私钥）
+    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
+    - echo "$DEPLOY_SSH_KEY" | base64 -d > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+    - ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+  script:
+    - echo ">>> 部署到 国内测试环境 [$DEPLOY_HOST]..."
+    - |
+      ssh -o StrictHostKeyChecking=no -p 58422 "$DEPLOY_USER@$DEPLOY_HOST" << EOF
+        set -e
+        echo "[远程] 登录阿里云 ACR..."
+        echo "$ALIYUN_REGISTRY_PASSWORD" | docker login "$ALIYUN_REGISTRY" -u "$ALIYUN_REGISTRY_USER" --password-stdin
+        
+        echo "[远程] 拉取镜像: $IMAGE_NAME:$CI_COMMIT_SHA"
+        docker pull "$IMAGE_NAME:$CI_COMMIT_SHA"
+        
+        echo "[远程] 更新 docker-compose.yml..."
+        cd /opt/fy-api
+        sed -i "s|image: .*|image: $IMAGE_NAME:$CI_COMMIT_SHA|" docker-compose.yml
+        
+        echo "[远程] 重启容器..."
+        docker-compose down
+        docker-compose up -d
+        
+        echo "[远程] 等待服务启动..."
+        sleep 5
+        docker ps | grep fy-api || echo "警告: 容器可能未正常启动"
+        
+        echo "[远程] 清理旧镜像..."
+        docker image prune -f
+        
+        echo "[远程] 国内测试环境部署完成"
+      EOF
+  environment:
+    name: cn-test
+    url: "http://$DEPLOY_HOST_CN_TEST:3000"
+  rules:
+    # 规则1: Web 手动触发且勾选了 DEPLOY_CN_TEST=true，自动执行
+    - if: '$CI_PIPELINE_SOURCE == "web" && $DEPLOY_CN_TEST == "true"'
+      when: on_success
+    # 规则2: develop 分支代码提交后，显示"手动执行"按钮
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+      when: manual
+      allow_failure: true
+
+# -------------------- 国外测试环境 (develop 分支) --------------------
+deploy_global_test:
+  stage: deploy
+  variables:
+    DEPLOY_HOST: "$DEPLOY_HOST_GLOBAL_TEST"
+  before_script:
+    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
+    - echo "$DEPLOY_SSH_KEY" | base64 -d > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+    - ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+  script:
+    - echo ">>> 部署到 国外测试环境 [$DEPLOY_HOST]..."
+    - |
+      ssh -o StrictHostKeyChecking=no -p 58422 "$DEPLOY_USER@$DEPLOY_HOST" << EOF
+        set -e
+        echo "$ALIYUN_REGISTRY_PASSWORD" | docker login "$ALIYUN_REGISTRY" -u "$ALIYUN_REGISTRY_USER" --password-stdin
+        docker pull "$IMAGE_NAME:$CI_COMMIT_SHA"
+        cd /opt/fy-api
+        sed -i "s|image: .*|image: $IMAGE_NAME:$CI_COMMIT_SHA|" docker-compose.yml
+        docker-compose down
+        docker-compose up -d
+        sleep 5
+        docker ps | grep fy-api || echo "警告: 容器可能未正常启动"
+        docker image prune -f
+        echo "[远程] 国外测试环境部署完成"
+      EOF
+  environment:
+    name: global-test
+    url: "http://$DEPLOY_HOST_GLOBAL_TEST:3000"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web" && $DEPLOY_GLOBAL_TEST == "true"'
+      when: on_success
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+      when: manual
+      allow_failure: true
+
+# -------------------- 国内生产环境 (main 分支) --------------------
+deploy_cn_prod:
+  stage: deploy
+  variables:
+    DEPLOY_HOST: "$DEPLOY_HOST_CN_PROD"
+  before_script:
+    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
+    - echo "$DEPLOY_SSH_KEY" | base64 -d > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+    - ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+  script:
+    - echo ">>> 部署到 国内生产环境 [$DEPLOY_HOST]..."
+    - |
+      ssh -o StrictHostKeyChecking=no -p 58422 "$DEPLOY_USER@$DEPLOY_HOST" << EOF
+        set -e
+        echo "$ALIYUN_REGISTRY_PASSWORD" | docker login "$ALIYUN_REGISTRY" -u "$ALIYUN_REGISTRY_USER" --password-stdin
+        docker pull "$IMAGE_NAME:$CI_COMMIT_SHA"
+        cd /opt/fy-api
+        sed -i "s|image: .*|image: $IMAGE_NAME:$CI_COMMIT_SHA|" docker-compose.yml
+        docker-compose down
+        docker-compose up -d
+        sleep 5
+        docker ps | grep fy-api || echo "警告: 容器可能未正常启动"
+        docker image prune -f
+        echo "[远程] 国内生产环境部署完成"
+      EOF
+  environment:
+    name: cn-production
+    url: "http://$DEPLOY_HOST_CN_PROD:3000"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web" && $DEPLOY_CN_PROD == "true"'
+      when: on_success
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+      allow_failure: true
+
+# -------------------- 国外生产环境 (main 分支) --------------------
+deploy_global_prod:
+  stage: deploy
+  variables:
+    DEPLOY_HOST: "$DEPLOY_HOST_GLOBAL_PROD"
+  before_script:
+    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
+    - echo "$DEPLOY_SSH_KEY" | base64 -d > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+    - ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+  script:
+    - echo ">>> 部署到 国外生产环境 [$DEPLOY_HOST]..."
+    - |
+      ssh -o StrictHostKeyChecking=no -p 58422 "$DEPLOY_USER@$DEPLOY_HOST" << EOF
+        set -e
+        echo "$ALIYUN_REGISTRY_PASSWORD" | docker login "$ALIYUN_REGISTRY" -u "$ALIYUN_REGISTRY_USER" --password-stdin
+        docker pull "$IMAGE_NAME:$CI_COMMIT_SHA"
+        cd /opt/fy-api
+        sed -i "s|image: .*|image: $IMAGE_NAME:$CI_COMMIT_SHA|" docker-compose.yml
+        docker-compose down
+        docker-compose up -d
+        sleep 5
+        docker ps | grep fy-api || echo "警告: 容器可能未正常启动"
+        docker image prune -f
+        echo "[远程] 国外生产环境部署完成"
+      EOF
+  environment:
+    name: global-production
+    url: "http://$DEPLOY_HOST_GLOBAL_PROD:3000"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web" && $DEPLOY_GLOBAL_PROD == "true"'
+      when: on_success
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+      allow_failure: true

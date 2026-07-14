@@ -22,6 +22,22 @@ func TestSessionOptionsCookieDomain(t *testing.T) {
 	assert.Equal(t, ".aitracenex.com", SessionOptions().Domain)
 }
 
+func TestSessionOptionsCookieDomainAndSecure(t *testing.T) {
+	originalDomain := SessionCookieDomain
+	originalSecure := SessionCookieSecure
+	t.Cleanup(func() {
+		SessionCookieDomain = originalDomain
+		SessionCookieSecure = originalSecure
+	})
+
+	SessionCookieDomain = ".aitracenex.com"
+	SessionCookieSecure = true
+
+	options := SessionOptions()
+	assert.Equal(t, ".aitracenex.com", options.Domain)
+	assert.True(t, options.Secure)
+}
+
 func TestClearLegacyHostOnlySessionCookie(t *testing.T) {
 	recorder := httptest.NewRecorder()
 

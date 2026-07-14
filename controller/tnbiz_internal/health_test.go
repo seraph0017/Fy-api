@@ -85,7 +85,7 @@ func setupUserEndpointTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	common.UsingSQLite = true
+	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
 	if err := db.AutoMigrate(&model.User{}); err != nil {
 		t.Fatalf("migrate user: %v", err)
 	}
