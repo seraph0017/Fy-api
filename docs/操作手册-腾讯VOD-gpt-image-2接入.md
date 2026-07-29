@@ -47,3 +47,5 @@
 4. 将 `AigcImageTask.Output.FileInfos[].FileUrl` 转为 OpenAI Images 响应。
 
 单次请求最长轮询 10 分钟。`response_format=url` 直接返回 VOD 临时 URL；其他值会下载图片并返回 `b64_json`。
+
+提交任务使用渠道配置的 `https://gateway.vod-qcloud.com`；该网关不允许 `DescribeTaskDetail`，因此任务查询会自动切换到 `https://vod.tencentcloudapi.com`。两个请求分别使用各自的 Host 计算 TC3 签名，后台无需配置第二个地址。

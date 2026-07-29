@@ -373,30 +373,14 @@ func (a *Adaptor) doTencentVODImageRequest(c *gin.Context, info *relaycommon.Rel
 }
 
 func (a *Adaptor) tencentVODPost(ctx context.Context, c *gin.Context, info *relaycommon.RelayInfo, action string, body []byte, secretID, secretKey string) ([]byte, error) {
-	endpoint := strings.TrimRight(info.ChannelBaseUrl, "/") + "/"
-	u, err := url.Parse(endpoint)
+	endpoint, err := tencentVODEndpoint(info.ChannelBaseUrl, action)
 	if err != nil {
 		return nil, err
 	}
-	host := u.Host
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	req, err := newTencentVODRequest(ctx, endpoint, action, body, secretID, secretKey, common.GetTimestamp())
 	if err != nil {
 		return nil, err
 	}
-	timestamp := common.GetTimestamp()
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-TC-Action", action)
-	req.Header.Set("X-TC-Version", tencentVODVersion)
-	req.Header.Set("X-TC-Timestamp", strconv.FormatInt(timestamp, 10))
-	req.Header.Set("Authorization", buildTencentTC3Authorization(tencentTC3SignInput{
-		SecretID:  secretID,
-		SecretKey: secretKey,
-		Service:   tencentVODService,
-		Host:      host,
-		Action:    action,
-		Timestamp: timestamp,
-		Payload:   body,
-	}))
 
 	resp, err := channel.DoRequest(c, req, info)
 	if err != nil {
@@ -411,6 +395,54 @@ func (a *Adaptor) tencentVODPost(ctx context.Context, c *gin.Context, info *rela
 		return nil, fmt.Errorf("Tencent VOD %s failed with status %d: %s", action, resp.StatusCode, string(responseBody))
 	}
 	return responseBody, nil
+}
+
+func tencentVODEndpoint(baseURL, action string) (string, error) {
+	endpoint := strings.TrimRight(baseURL, "/") + "/"
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return "", err
+	}
+	if u.Scheme == "" || u.Host == "" {
+		return "", fmt.Errorf("invalid Tencent VOD base URL %q", baseURL)
+	}
+	// Fy-api overlay: vod-gateway accepts AIGC submission but rejects the
+	// standard DescribeTaskDetail action. Poll through the public VOD API.
+	if action == tencentVODDescribeAction && strings.EqualFold(u.Hostname(), tencentVODGatewayHost) {
+		u.Scheme = "https"
+		u.Host = tencentVODLegacyHost
+		u.Path = "/"
+		u.RawPath = ""
+		u.RawQuery = ""
+		u.Fragment = ""
+	}
+	return u.String(), nil
+}
+
+func newTencentVODRequest(ctx context.Context, endpoint, action string, body []byte, secretID, secretKey string, timestamp int64) (*http.Request, error) {
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return nil, err
+	}
+	host := u.Host
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-TC-Action", action)
+	req.Header.Set("X-TC-Version", tencentVODVersion)
+	req.Header.Set("X-TC-Timestamp", strconv.FormatInt(timestamp, 10))
+	req.Header.Set("Authorization", buildTencentTC3Authorization(tencentTC3SignInput{
+		SecretID:  secretID,
+		SecretKey: secretKey,
+		Service:   tencentVODService,
+		Host:      host,
+		Action:    action,
+		Timestamp: timestamp,
+		Payload:   body,
+	}))
+	return req, nil
 }
 
 func parseTencentVODSubmitTaskID(body []byte) (string, error) {

@@ -122,6 +122,46 @@ func TestAdaptorConvertImageRequestUsesTencentVODForGatewayHost(t *testing.T) {
 	assert.Equal(t, "image2_low", request.ModelVersion)
 }
 
+func TestTencentVODEndpointAndSignatureUseActionSpecificHost(t *testing.T) {
+	const (
+		baseURL   = "https://gateway.vod-qcloud.com"
+		secretID  = "sid"
+		secretKey = "skey"
+		timestamp = int64(1700000000)
+	)
+	body := []byte(`{"TaskId":"task-1","SubAppId":1500044236}`)
+
+	tests := []struct {
+		name     string
+		action   string
+		wantHost string
+	}{
+		{name: "submit through AIGC gateway", action: tencentVODSubmitAction, wantHost: tencentVODGatewayHost},
+		{name: "poll through public VOD API", action: tencentVODDescribeAction, wantHost: tencentVODLegacyHost},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			endpoint, err := tencentVODEndpoint(baseURL, tt.action)
+			require.NoError(t, err)
+			req, err := newTencentVODRequest(t.Context(), endpoint, tt.action, body, secretID, secretKey, timestamp)
+			require.NoError(t, err)
+
+			assert.Equal(t, tt.wantHost, req.URL.Host)
+			assert.Equal(t, tt.action, req.Header.Get("X-TC-Action"))
+			assert.Equal(t, buildTencentTC3Authorization(tencentTC3SignInput{
+				SecretID:  secretID,
+				SecretKey: secretKey,
+				Service:   tencentVODService,
+				Host:      tt.wantHost,
+				Action:    tt.action,
+				Timestamp: timestamp,
+				Payload:   body,
+			}), req.Header.Get("Authorization"))
+		})
+	}
+}
+
 func TestTencentVODDoRequestSubmitsPollsAndConverts(t *testing.T) {
 	var calls int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
