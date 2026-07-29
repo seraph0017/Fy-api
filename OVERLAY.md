@@ -580,6 +580,18 @@
 - **行为**：仅影响 Gemini image-preview / Nano Banana 的 OpenAI Images 兼容路径；不改变 OpenAI/GPT Image、Imagen、chat 路线。
 - **冲突风险**：低（新增 DTO 可选字段；Gemini adapter 内局部映射；静态 API 文档同步）
 
+### B-35 [tencent/vod] VOD AIGC GPT Image 2 OpenAI Images 兼容
+
+- **问题**：腾讯云 VOD 通过异步 `CreateAigcImageTask` / `DescribeTaskDetail` 暴露 GPT Image 2（`ModelName=OG`），与现有腾讯混元 Chat 和 AIArt `SubmitContentToImageGPTJob` 协议均不兼容；仅配置 Tencent 渠道会在 `ConvertImageRequest` 返回 `not implemented`。
+- **新增文件**：
+  - `relay/channel/tencent/vod_image.go`：按 `gateway.vod-qcloud.com`（兼容旧 `vod.tencentcloudapi.com`）识别 VOD 分支；转换 OpenAI Images 请求、执行 VOD TC3-HMAC-SHA256 签名、提交并轮询任务、把 `AigcImageTask.Output.FileInfos[].FileUrl` 转回 OpenAI Images 响应。
+  - `relay/channel/tencent/vod_image_test.go`：覆盖主机分流、参数映射、尺寸/数量校验、URL/Base64 参考图、VOD credential scope、提交/查询链路、失败态和两种响应包装。
+  - `docs/操作手册-腾讯VOD-gpt-image-2接入.md`：渠道配置、字段映射和限制。
+- **修改文件**：`relay/channel/tencent/adaptor.go`（`// Fy-api overlay:`：在现有 AIArt 分支之前加入 VOD Convert/DoRequest/DoResponse 分发）。
+- **行为**：公开接口保持同步 `POST /v1/images/generations`；内部使用异步 VOD 任务。`CreateAigcImageTask` 走渠道配置的 `gateway.vod-qcloud.com`，`DescribeTaskDetail` 自动切换到标准 `vod.tencentcloudapi.com` 并按实际 Host 重新生成 TC3 签名（vod-gateway 会以 `ActionNotAllowed` 拒绝查询动作）。渠道 key 格式为 `SubAppId|SecretId|SecretKey`；`quality=low|medium|high|auto` 映射为 `image2_low|medium|high`，`auto` 默认 `medium`；支持 `n=1..8`、自定义/auto size、PNG/JPEG、URL/Base64 参考图（最多 16 张）。
+- **冲突风险**：低（核心实现和测试均为新文件；只在 Tencent adaptor 增加三个小分支）。
+- **Merge 策略**：若 upstream 后续实现腾讯 VOD AIGC，优先采用 upstream 的通用 TC3/任务模型，但保留 `gateway.vod-qcloud.com`、OpenAI Images 同步兼容和现有渠道 key 格式。
+
 ---
 
 ## 前端定制

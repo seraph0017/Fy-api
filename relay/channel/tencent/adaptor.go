@@ -44,6 +44,10 @@ func (a *Adaptor) ConvertAudioRequest(c *gin.Context, info *relaycommon.RelayInf
 }
 
 func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.ImageRequest) (any, error) {
+	// Fy-api overlay: Tencent VOD exposes GPT Image 2 through async AIGC jobs.
+	if isTencentVODImageGeneration(info) {
+		return tencentVODImageRequestFromOpenAI(request, info)
+	}
 	// Fy-api overlay: Tencent AIArt uses async jobs; keep the public OpenAI image API synchronous.
 	if isTencentAIArtImageGeneration(info) {
 		return tencentAIArtImageRequestFromOpenAI(request)
@@ -106,6 +110,10 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommo
 }
 
 func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, requestBody io.Reader) (any, error) {
+	// Fy-api overlay: keep Tencent VOD's async task protocol behind the synchronous OpenAI image API.
+	if isTencentVODImageGeneration(info) {
+		return a.doTencentVODImageRequest(c, info, requestBody)
+	}
 	// Fy-api overlay: submit and poll Tencent AIArt image jobs behind /v1/images/generations.
 	if isTencentAIArtImageGeneration(info) {
 		return a.doTencentAIArtImageRequest(c, info, requestBody)
@@ -114,6 +122,10 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, request
 }
 
 func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (usage any, err *types.NewAPIError) {
+	// Fy-api overlay: convert completed Tencent VOD AIGC tasks into OpenAI image responses.
+	if isTencentVODImageGeneration(info) {
+		return writeTencentVODImageResponse(c, resp, info)
+	}
 	// Fy-api overlay: convert completed Tencent AIArt job results into OpenAI image response.
 	if isTencentAIArtImageGeneration(info) {
 		return writeTencentAIArtImageResponse(c, resp, info)
