@@ -100,11 +100,12 @@ Follow `docs/Weekly-upstream-sync-runbook.md` for the weekly merge flow and the 
 
 ### Pull request workflow
 
-When creating a PR for the user, use a separate git worktree for the PR branch instead of switching the main worktree away from its current branch. This keeps the user's active workspace, IDE state, and untracked files undisturbed.
+When creating a PR for the user, use a separate git worktree under `.worktree/` for the PR branch instead of switching the main worktree away from its current branch. This keeps the user's active workspace, IDE state, and untracked files undisturbed. Do not create PR worktrees in the parent directory.
 
 ```bash
-git worktree add ../fy-api-pr-<name> -b <branch-name> develop
-cd ../fy-api-pr-<name>
+mkdir -p .worktree
+git worktree add .worktree/<name> -b <branch-name> develop
+cd .worktree/<name>
 # make edits, run tests, commit, push, and create the PR here
 ```
 
