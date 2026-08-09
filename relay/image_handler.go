@@ -153,6 +153,42 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 		quality = "auto" // Fy-api overlay: B-14 default to "auto" for gpt-image-2 quality
 	}
 
+	// Fy-api overlay: emit canonical media billing dimensions for image logs.
+	qualityBucket, qualityFallbacks, qualityWarnings := service.NormalizeMediaQuality(quality)
+	width, height, resolutionBucket, aspectRatio, resolutionFallbacks, resolutionWarnings := service.NormalizeMediaResolution(request.Size)
+	billingMode := service.MediaBillingModeTokenRate
+	unitPrice := info.PriceData.ImageRatio
+	unit := service.MediaUnitToken1M
+	multiplier := float64(usage.(*dto.Usage).TotalTokens)
+	if info.PriceData.UsePrice {
+		billingMode = service.MediaBillingModeFixedImage
+		unitPrice = info.PriceData.ModelPrice
+		unit = service.MediaUnitImage
+		multiplier = float64(imageN)
+	} else if unitPrice == 0 {
+		unitPrice = info.PriceData.ModelRatio
+	}
+	dimensions := service.MediaBillingDimensions{
+		Modality:            service.MediaModalityImage,
+		ModelName:           info.OriginModelName,
+		UpstreamModelName:   info.UpstreamModelName,
+		Provider:            adaptor.GetChannelName(),
+		BillingMode:         billingMode,
+		ImageCount:          int(imageN),
+		QualityRaw:          quality,
+		QualityBucket:       qualityBucket,
+		SizeRaw:             request.Size,
+		Width:               width,
+		Height:              height,
+		ResolutionBucket:    resolutionBucket,
+		AspectRatio:         aspectRatio,
+		ReferenceImageCount: 0,
+		ReferenceVideoCount: 0,
+		Fallbacks:           append(qualityFallbacks, resolutionFallbacks...),
+		Warnings:            append(qualityWarnings, resolutionWarnings...),
+	}
+	info.PriceData.SetMediaBilling(service.BuildMediaOther(dimensions, unitPrice, unit, multiplier))
+
 	var logContent []string
 
 	if len(request.Size) > 0 {

@@ -114,7 +114,13 @@ def check_image(client: httpx.Client, model: str) -> CaseResult:
         return CaseResult("image-fixed-price", False, f"quota={quota}")
     if other.get("is_task") is True:
         return CaseResult("image-fixed-price", False, "image log unexpectedly marked as task")
-    return CaseResult("image-fixed-price", True, f"quota={quota}, model_price={other.get('model_price')}")
+    if other.get("media_billing") is not True:
+        return CaseResult("image-fixed-price", False, f"missing media_billing: other={other}")
+    if other.get("media_modality") != "image":
+        return CaseResult("image-fixed-price", False, f"unexpected media_modality: other={other}")
+    if not other.get("media_resolution_bucket"):
+        return CaseResult("image-fixed-price", False, f"missing media_resolution_bucket: other={other}")
+    return CaseResult("image-fixed-price", True, f"quota={quota}, media={other.get('media_billing_mode')}/{other.get('media_resolution_bucket')}")
 
 
 def submit_video(client: httpx.Client, body: dict[str, Any]) -> str:
@@ -166,9 +172,17 @@ def check_video(client: httpx.Client, model: str, image_url: str, *, size: str, 
         return CaseResult(f"video-{model}", False, f"log is not task-shaped: quota={quota}, other={other}")
     if float(other.get("seconds") or 0) <= 0:
         return CaseResult(f"video-{model}", False, f"missing structured seconds: other={other}")
+    if other.get("media_billing") is not True:
+        return CaseResult(f"video-{model}", False, f"missing media_billing: other={other}")
+    if other.get("media_modality") != "video":
+        return CaseResult(f"video-{model}", False, f"unexpected media_modality: other={other}")
+    if float(other.get("media_duration_seconds") or 0) <= 0:
+        return CaseResult(f"video-{model}", False, f"missing media_duration_seconds: other={other}")
+    if not other.get("media_resolution_bucket"):
+        return CaseResult(f"video-{model}", False, f"missing media_resolution_bucket: other={other}")
     if quota <= 0:
         return CaseResult(f"video-{model}", False, f"quota={quota}")
-    return CaseResult(f"video-{model}", True, f"task_id={task_id}, quota={quota}, other={other}")
+    return CaseResult(f"video-{model}", True, f"task_id={task_id}, quota={quota}, media={other.get('media_resolution_bucket')}/{other.get('media_duration_seconds')}s")
 
 
 def main() -> int:

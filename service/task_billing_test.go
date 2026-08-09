@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/types"
@@ -642,6 +643,15 @@ func TestLogTaskConsumption_IncludesOtherRatios(t *testing.T) {
 				"seconds":          5,
 				"resolution-1080P": 1 / 0.6,
 			},
+			MediaBilling: map[string]any{
+				"media_billing":               true,
+				"media_modality":              "video",
+				"media_billing_mode":          "video_duration",
+				"media_resolution_bucket":     "1080p",
+				"media_duration_seconds":      5.0,
+				"media_has_image_input":       true,
+				"media_reference_image_count": 1,
+			},
 			UsePrice: true,
 		},
 	}
@@ -656,6 +666,110 @@ func TestLogTaskConsumption_IncludesOtherRatios(t *testing.T) {
 	assert.Equal(t, true, other["is_task"])
 	assert.InDelta(t, 5.0, other["seconds"], 0.0001)
 	assert.InDelta(t, 1/0.6, other["resolution-1080P"], 0.0001)
+	assert.Equal(t, true, other["media_billing"])
+	assert.Equal(t, "video", other["media_modality"])
+	assert.Equal(t, "video_duration", other["media_billing_mode"])
+	assert.Equal(t, "1080p", other["media_resolution_bucket"])
+	assert.InDelta(t, 5.0, other["media_duration_seconds"], 0.0001)
+	assert.Equal(t, true, other["media_has_image_input"])
+	assert.InDelta(t, 1.0, other["media_reference_image_count"], 0.0001)
+}
+
+func TestPostTextConsumeQuota_IncludesImageGenerationMediaBilling(t *testing.T) {
+	truncate(t)
+	gin.SetMode(gin.TestMode)
+
+	const userID, channelID, tokenID = 25, 25, 25
+	seedUser(t, userID, 10000)
+	seedChannel(t, channelID)
+
+	c, _ := gin.CreateTestContext(nil)
+	c.Request, _ = http.NewRequest(http.MethodPost, "/v1/responses", nil)
+	c.Set("username", "test_user")
+	c.Set("image_generation_call", true)
+	c.Set("image_generation_call_quality", "low")
+	c.Set("image_generation_call_size", "1024x1024")
+
+	info := &relaycommon.RelayInfo{
+		UserId:                userID,
+		TokenId:               tokenID,
+		OriginModelName:       "gpt-4o",
+		UsingGroup:            "default",
+		FinalPreConsumedQuota: 10500,
+		StartTime:             time.Now(),
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelId:         channelID,
+			UpstreamModelName: "gpt-4o",
+		},
+		PriceData: types.PriceData{
+			ModelRatio:      1,
+			CompletionRatio: 1,
+			GroupRatioInfo: types.GroupRatioInfo{
+				GroupRatio: 1,
+			},
+		},
+	}
+	usage := &dto.Usage{
+		PromptTokens:     10,
+		CompletionTokens: 10,
+		TotalTokens:      20,
+	}
+
+	PostTextConsumeQuota(c, info, usage, nil)
+
+	log := getLastLog(t)
+	require.NotNil(t, log)
+
+	var other map[string]interface{}
+	require.NoError(t, common.Unmarshal([]byte(log.Other), &other))
+	assert.Equal(t, true, other["image_generation_call"])
+	assert.InDelta(t, 0.011, other["image_generation_call_price"], 0.0001)
+	assert.Equal(t, "low", other["image_generation_call_quality"])
+	assert.Equal(t, "1024x1024", other["image_generation_call_size"])
+	assert.Equal(t, true, other["media_billing"])
+	assert.Equal(t, "image", other["media_modality"])
+	assert.Equal(t, "fixed_image", other["media_billing_mode"])
+	assert.Equal(t, "low", other["media_quality_bucket"])
+	assert.Equal(t, "square", other["media_resolution_bucket"])
+	assert.InDelta(t, 0.011, other["media_unit_price"], 0.0001)
+	assert.Equal(t, "image", other["media_unit"])
+}
+
+func TestRecalculateTaskQuota_IncludesMediaBillingInDeltaLog(t *testing.T) {
+	truncate(t)
+	ctx := context.Background()
+
+	const userID, channelID, tokenID = 26, 26, 26
+	seedUser(t, userID, 10000)
+	seedToken(t, tokenID, userID, "sk-media-delta", 10000)
+	seedChannel(t, channelID)
+
+	task := makeTask(userID, channelID, 1000, tokenID, BillingSourceWallet, 0)
+	task.Properties.OriginModelName = "wan2.6-i2v"
+	task.PrivateData.BillingContext.MediaBilling = map[string]any{
+		"media_billing":          true,
+		"media_modality":         "video",
+		"media_billing_mode":     "video_duration",
+		"media_duration_seconds": 3.0,
+		"media_provider_usage": map[string]float64{
+			"duration": 3,
+		},
+	}
+	require.NoError(t, model.DB.Create(task).Error)
+
+	RecalculateTaskQuota(ctx, task, 1500, "adaptor计费调整")
+
+	log := getLastLog(t)
+	require.NotNil(t, log)
+	var other map[string]interface{}
+	require.NoError(t, common.Unmarshal([]byte(log.Other), &other))
+	assert.Equal(t, true, other["is_task"])
+	assert.Equal(t, true, other["media_billing"])
+	assert.Equal(t, "video", other["media_modality"])
+	assert.InDelta(t, 3.0, other["media_duration_seconds"], 0.0001)
+	providerUsage, ok := other["media_provider_usage"].(map[string]interface{})
+	require.True(t, ok)
+	assert.InDelta(t, 3.0, providerUsage["duration"], 0.0001)
 }
 
 func TestLogTaskConsumption_IncludesVideoPipelineEstimateMarker(t *testing.T) {

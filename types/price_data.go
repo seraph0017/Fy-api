@@ -21,10 +21,12 @@ type PriceData struct {
 	AudioRatio           float64
 	AudioCompletionRatio float64
 	OtherRatios          map[string]float64
-	UsePrice             bool
-	Quota                int // 按次计费的最终额度（MJ / Task）
-	QuotaToPreConsume    int // 按量计费的预消耗额度
-	GroupRatioInfo       GroupRatioInfo
+	// Fy-api overlay: canonical media billing dimensions for image/video audit logs.
+	MediaBilling      map[string]any
+	UsePrice          bool
+	Quota             int // 按次计费的最终额度（MJ / Task）
+	QuotaToPreConsume int // 按量计费的预消耗额度
+	GroupRatioInfo    GroupRatioInfo
 }
 
 func (p *PriceData) AddOtherRatio(key string, ratio float64) {
@@ -35,6 +37,18 @@ func (p *PriceData) AddOtherRatio(key string, ratio float64) {
 		return
 	}
 	p.OtherRatios[key] = ratio
+}
+
+func (p *PriceData) SetMediaBilling(other map[string]any) {
+	if len(other) == 0 {
+		return
+	}
+	if p.MediaBilling == nil {
+		p.MediaBilling = make(map[string]any, len(other))
+	}
+	for k, v := range other {
+		p.MediaBilling[k] = v
+	}
 }
 
 func (p *PriceData) ToSetting() string {

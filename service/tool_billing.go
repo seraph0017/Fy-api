@@ -69,13 +69,14 @@ func ComputeToolCallQuota(usage ToolCallUsage, groupRatio float64) ToolCallResul
 	}
 
 	if usage.ImageGenerationCall {
-		price := operation_setting.GetGPTImage1PriceOnceCall(usage.ImageGenerationQuality, usage.ImageGenerationSize)
-		quota := int(math.Round(price * common.QuotaPerUnit * groupRatio))
+		// Fy-api overlay: image-generation tool pricing depends on normalized quality+size.
+		pricing := operation_setting.ResolveImageGenerationPrice(usage.ImageGenerationQuality, usage.ImageGenerationSize)
+		quota := int(math.Round(pricing.Price * common.QuotaPerUnit * groupRatio))
 		items = append(items, ToolCallItem{
 			Name:       "image_generation",
 			CallCount:  1,
-			PricePer1K: price,
-			TotalPrice: price,
+			PricePer1K: pricing.Price,
+			TotalPrice: pricing.Price,
 			Quota:      quota,
 		})
 		totalQuota += quota
