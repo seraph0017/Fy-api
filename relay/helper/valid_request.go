@@ -1,6 +1,7 @@
 package helper
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -24,6 +25,11 @@ func GetAndValidateRequest(c *gin.Context, format types.RelayFormat) (request dt
 	switch format {
 	case types.RelayFormatOpenAI:
 		request, err = GetAndValidateTextRequest(c, relayMode)
+		if err == nil {
+			// Fy-api overlay: accept text-only chat/completions requests for
+			// OpenAI image models by normalizing them to image generations.
+			request, err = MaybeConvertImageChatRequest(c, request)
+		}
 	case types.RelayFormatGemini:
 		if strings.Contains(c.Request.URL.Path, ":embedContent") {
 			request, err = GetAndValidateGeminiEmbeddingRequest(c)
@@ -53,6 +59,110 @@ func GetAndValidateRequest(c *gin.Context, format types.RelayFormat) (request dt
 		return nil, fmt.Errorf("unsupported relay format: %s", format)
 	}
 	return request, err
+}
+
+func MaybeConvertImageChatRequest(c *gin.Context, request dto.Request) (dto.Request, error) {
+	if relayconstant.Path2RelayMode(c.Request.URL.Path) != relayconstant.RelayModeChatCompletions {
+		return request, nil
+	}
+	textRequest, ok := request.(*dto.GeneralOpenAIRequest)
+	if !ok || !dto.IsOpenAIImageModel(textRequest.Model) {
+		return request, nil
+	}
+	extra, err := imageChatExtraFields(c)
+	if err != nil {
+		return nil, err
+	}
+
+	prompt, err := imagePromptFromChatMessages(textRequest.Messages)
+	if err != nil {
+		return nil, err
+	}
+	imageRequest := &dto.ImageRequest{
+		Model:             textRequest.Model,
+		Prompt:            prompt,
+		N:                 uintPointerFromInt(textRequest.N),
+		Size:              textRequest.Size,
+		Quality:           normalizeGptImageQuality(extra.Quality),
+		Stream:            textRequest.Stream,
+		User:              textRequest.User,
+		Background:        extra.Background,
+		Moderation:        extra.Moderation,
+		OutputFormat:      extra.OutputFormat,
+		OutputCompression: extra.OutputCompression,
+	}
+	if textRequest.N == nil || *textRequest.N <= 0 {
+		imageRequest.N = common.GetPointer(uint(1))
+	}
+	if imageRequest.Quality == "" {
+		imageRequest.Quality = "auto"
+	}
+
+	body, err := common.Marshal(imageRequest)
+	if err != nil {
+		return nil, err
+	}
+	storage, err := common.CreateBodyStorage(body)
+	if err != nil {
+		return nil, err
+	}
+	c.Set(common.KeyBodyStorage, storage)
+	c.Request.ContentLength = int64(len(body))
+	c.Request.URL.Path = "/v1/images/generations"
+	c.Request.URL.RawPath = ""
+	c.Set("relay_mode", relayconstant.RelayModeImagesGenerations)
+	return imageRequest, nil
+}
+
+type imageChatExtra struct {
+	Quality           string          `json:"quality,omitempty"`
+	Background        json.RawMessage `json:"background,omitempty"`
+	Moderation        json.RawMessage `json:"moderation,omitempty"`
+	OutputFormat      json.RawMessage `json:"output_format,omitempty"`
+	OutputCompression json.RawMessage `json:"output_compression,omitempty"`
+}
+
+func imageChatExtraFields(c *gin.Context) (*imageChatExtra, error) {
+	storage, err := common.GetBodyStorage(c)
+	if err != nil {
+		return nil, err
+	}
+	body, err := storage.Bytes()
+	if err != nil {
+		return nil, err
+	}
+	var extra imageChatExtra
+	if err := common.Unmarshal(body, &extra); err != nil {
+		return nil, err
+	}
+	return &extra, nil
+}
+
+func imagePromptFromChatMessages(messages []dto.Message) (string, error) {
+	var promptParts []string
+	for _, message := range messages {
+		for _, content := range message.ParseContent() {
+			if content.Type == dto.ContentTypeText {
+				if text := strings.TrimSpace(content.Text); text != "" {
+					promptParts = append(promptParts, text)
+				}
+				continue
+			}
+			return "", fmt.Errorf("multimodal chat requests for image models are not supported on /v1/chat/completions; use /v1/images/edits")
+		}
+	}
+	if len(promptParts) == 0 {
+		return "", errors.New("prompt is required for image model chat compatibility")
+	}
+	return strings.Join(promptParts, "\n"), nil
+}
+
+func uintPointerFromInt(value *int) *uint {
+	if value == nil || *value <= 0 {
+		return nil
+	}
+	converted := uint(*value)
+	return &converted
 }
 
 func GetAndValidAudioRequest(c *gin.Context, relayMode int) (*dto.AudioRequest, error) {
