@@ -1,0 +1,596 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TraceNex / Fy-api 主流模型接入指南</title>
+  <style>
+    :root {
+      --bg: #f7f7f4;
+      --paper: #ffffff;
+      --ink: #202124;
+      --muted: #626866;
+      --line: #d9ded8;
+      --accent: #0d6b57;
+      --accent-2: #b93f2b;
+      --code-bg: #111816;
+      --code-ink: #ecf5ef;
+      --soft: #eaf1ed;
+      --warn: #fff4df;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Avenir Next", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      line-height: 1.65;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    .shell {
+      display: grid;
+      grid-template-columns: 280px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    nav {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      padding: 28px 22px;
+      border-right: 1px solid var(--line);
+      background: #f0f3ef;
+      overflow: auto;
+    }
+
+    .brand {
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 25px;
+      line-height: 1.1;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .version {
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 24px;
+    }
+
+    .toc-title {
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      margin: 22px 0 8px;
+    }
+
+    .toc a {
+      display: block;
+      padding: 7px 0;
+      color: #26312e;
+      font-size: 14px;
+    }
+
+    main {
+      padding: 42px clamp(22px, 5vw, 72px) 80px;
+    }
+
+    .hero {
+      min-height: 72vh;
+      display: grid;
+      align-content: center;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 42px;
+      background:
+        linear-gradient(90deg, rgba(13, 107, 87, .08), transparent 40%),
+        repeating-linear-gradient(0deg, transparent 0, transparent 31px, rgba(32, 33, 36, .045) 32px);
+    }
+
+    h1 {
+      margin: 0 0 18px;
+      max-width: 920px;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(42px, 7vw, 86px);
+      line-height: .98;
+      letter-spacing: 0;
+    }
+
+    .lead {
+      max-width: 760px;
+      font-size: 20px;
+      color: #343b39;
+      margin: 0 0 28px;
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      max-width: 920px;
+    }
+
+    .metric {
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,.72);
+      padding: 16px;
+    }
+
+    .metric strong {
+      display: block;
+      color: var(--accent);
+      font-size: 22px;
+    }
+
+    section {
+      max-width: 1120px;
+      margin: 0 auto 48px;
+      scroll-margin-top: 24px;
+    }
+
+    h2 {
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(29px, 4vw, 46px);
+      line-height: 1.1;
+      margin: 0 0 18px;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 30px 0 12px;
+      font-size: 22px;
+    }
+
+    p {
+      margin: 0 0 14px;
+    }
+
+    .callout {
+      border-left: 4px solid var(--accent);
+      background: var(--soft);
+      padding: 16px 18px;
+      margin: 18px 0;
+    }
+
+    .warning {
+      border-left-color: var(--accent-2);
+      background: var(--warn);
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin: 18px 0;
+    }
+
+    .card {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px;
+      box-shadow: 0 12px 26px rgba(20, 35, 30, .05);
+    }
+
+    .card h3 {
+      margin-top: 0;
+      font-size: 18px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 18px 0 28px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      font-size: 14px;
+    }
+
+    th,
+    td {
+      border-bottom: 1px solid var(--line);
+      padding: 11px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #edf2ee;
+      color: #24312e;
+      font-weight: 700;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    code {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: .92em;
+      background: #e7ece8;
+      padding: 2px 5px;
+      border-radius: 4px;
+    }
+
+    pre {
+      background: var(--code-bg);
+      color: var(--code-ink);
+      padding: 18px;
+      overflow: auto;
+      border-radius: 8px;
+      border: 1px solid #25342f;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    pre code {
+      background: transparent;
+      padding: 0;
+      color: inherit;
+    }
+
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 14px 0 22px;
+    }
+
+    .pill {
+      border: 1px solid var(--line);
+      background: var(--paper);
+      border-radius: 999px;
+      padding: 6px 11px;
+      font-size: 13px;
+      color: #33403d;
+    }
+
+    .footer {
+      max-width: 1120px;
+      margin: 60px auto 0;
+      padding-top: 22px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    @media (max-width: 940px) {
+      .shell {
+        display: block;
+      }
+
+      nav {
+        position: static;
+        height: auto;
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .toc {
+        columns: 2;
+      }
+
+      .hero-grid,
+      .cards {
+        grid-template-columns: 1fr;
+      }
+
+      .hero {
+        min-height: auto;
+        padding: 46px 0;
+      }
+    }
+
+    @media (max-width: 620px) {
+      main {
+        padding: 28px 16px 60px;
+      }
+
+      .toc {
+        columns: 1;
+      }
+
+      table {
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <nav>
+      <div class="brand">TraceNex<br>Fy-api</div>
+      <div class="version">主流模型接入指南 · v1.0 · 2026-06-15</div>
+      <div class="toc-title">目录</div>
+      <div class="toc">
+        <a href="#quickstart">快速开始</a>
+        <a href="#routes">协议与端点</a>
+        <a href="#protocols">协议参数</a>
+        <a href="#models">模型族接入</a>
+        <a href="#examples">调用示例</a>
+        <a href="#admin">管理员流程</a>
+        <a href="#troubleshooting">排障</a>
+        <a href="#limits">限制与建议</a>
+      </div>
+    </nav>
+
+    <main>
+      <header class="hero">
+        <h1>Fy-api 主流模型接入文档</h1>
+        <p class="lead">面向客户开发者和平台运营的统一接入指南：客户按协议调用，运营按渠道接入，所有模型通过 TraceNex 网关完成鉴权、路由、计费和日志追踪。</p>
+        <div class="hero-grid">
+          <div class="metric"><strong>1 个 Base URL</strong>OpenAI SDK 填 <code>/v1</code>，其他协议按端点调用。</div>
+          <div class="metric"><strong>9 类协议</strong>Chat、Responses、Claude、Gemini、Image、Video、Audio、Embedding、Rerank。</div>
+          <div class="metric"><strong>异步任务</strong>视频、Midjourney、Suno 需要提交任务后轮询查询。</div>
+        </div>
+      </header>
+
+      <section id="quickstart">
+        <h2>快速开始</h2>
+        <p>本文不是厂商原生 API 文档。它说明的是客户如何通过 Fy-api 统一接入模型，以及管理员如何把模型接入平台。页面中的模型名优先作为示例，最终可用模型以平台模型广场和管理员分配为准。</p>
+        <div class="callout">
+          <strong>快速结论：</strong>文本、图片、Embedding、Rerank、语音转文字通常是同步接口；Chat / Responses / Claude / Gemini 可按模型能力选择同步或流式；视频、Midjourney、Suno 是异步任务，先提交，再按 task id 查询。
+        </div>
+        <div class="cards">
+          <div class="card">
+            <h3>准备平台地址</h3>
+            <p>客户拿到部署域名，例如 <code>https://api.example.com</code>。OpenAI 兼容 SDK 的 <code>base_url</code> 通常填 <code>https://api.example.com/v1</code>。</p>
+          </div>
+          <div class="card">
+            <h3>创建令牌</h3>
+            <p>在“令牌管理”创建 <code>sk-...</code> 令牌。令牌可绑定分组、额度、过期时间、模型权限和 IP 白名单。</p>
+          </div>
+          <div class="card">
+            <h3>确认模型名</h3>
+            <p><code>model</code> 必须与模型广场或管理员提供的名称一致。错误模型名通常会导致 400 或无可用渠道。</p>
+          </div>
+        </div>
+        <pre><code>curl -X POST https://api.example.com/v1/chat/completions \
+  -H "Authorization: Bearer sk-你的令牌" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-4o-mini",
+    "messages": [{"role": "user", "content": "Hello Fy-api"}]
+  }'</code></pre>
+        <table>
+          <thead><tr><th>客户使用场景</th><th>优先接口</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td>OpenAI SDK</td><td><code>{BASE_URL}/v1</code></td><td>优先调用 <code>/v1/chat/completions</code>，图片、语音、Embedding 也按 OpenAI 兼容接口走。</td></tr>
+            <tr><td>Anthropic SDK</td><td><code>POST /v1/messages</code></td><td>保留 Claude 原生 <code>messages</code>、<code>system</code>、<code>tools</code>、<code>thinking</code> 语义。</td></tr>
+            <tr><td>Gemini 原生</td><td><code>POST /v1beta/models/{model}:generateContent</code></td><td>使用 <code>contents</code> / <code>parts</code> 结构，可使用 Gemini 流式路径。</td></tr>
+            <tr><td>视频生成</td><td><code>POST /v1/videos</code></td><td>提交后返回 <code>task_id</code>，查询 <code>GET /v1/videos/{task_id}</code>，下载 <code>GET /v1/videos/{task_id}/content</code>。</td></tr>
+            <tr><td>查询模型</td><td><code>GET /v1/models</code> / <code>GET /v1beta/models</code></td><td>查看当前令牌可见的模型，具体取决于平台权限配置。</td></tr>
+          </tbody>
+        </table>
+        <div class="callout">
+          客户报错时请同时提供请求时间、模型名、端点、HTTP 状态码、响应错误和 <code>X-Oneapi-Request-Id</code>。管理员可在用量日志按 request_id 查询。
+        </div>
+      </section>
+
+      <section id="routes">
+        <h2>协议与端点</h2>
+        <table>
+          <thead><tr><th>能力</th><th>推荐端点</th><th>协议</th><th>典型模型/厂商</th><th>返回方式</th></tr></thead>
+          <tbody>
+            <tr><td>模型列表</td><td><code>GET /v1/models</code>、<code>GET /v1beta/models</code></td><td>OpenAI / Gemini</td><td>平台当前可见模型</td><td>同步</td></tr>
+            <tr><td>文本对话</td><td><code>POST /v1/chat/completions</code></td><td>OpenAI Chat</td><td>GPT、DeepSeek、Qwen、Doubao、Moonshot、智谱、OpenRouter、xAI、Ollama</td><td>同步或 SSE</td></tr>
+            <tr><td>新版多模态/工具</td><td><code>POST /v1/responses</code></td><td>OpenAI Responses</td><td>OpenAI、Codex、部分兼容渠道</td><td>同步或流式</td></tr>
+            <tr><td>Claude 原生</td><td><code>POST /v1/messages</code></td><td>Anthropic Messages</td><td>Claude、Bedrock Claude、Vertex Claude</td><td>同步或流式</td></tr>
+            <tr><td>Gemini 原生</td><td><code>POST /v1beta/models/{model}:generateContent</code></td><td>Gemini Native</td><td>Gemini、Vertex Gemini</td><td>同步</td></tr>
+            <tr><td>Gemini 流式</td><td><code>POST /v1beta/models/{model}:streamGenerateContent?alt=sse</code></td><td>Gemini Native SSE</td><td>Gemini、Vertex Gemini</td><td>SSE</td></tr>
+            <tr><td>图片生成</td><td><code>POST /v1/images/generations</code></td><td>OpenAI Image</td><td>DALL-E、GPT Image、通义万相、火山、腾讯、Replicate</td><td>同步或任务式</td></tr>
+            <tr><td>视频生成</td><td><code>POST /v1/videos</code></td><td>OpenAI-like Video Task</td><td>Sora、Veo、Kling、Vidu、Seedance、Wanx、Hailuo</td><td>异步任务</td></tr>
+            <tr><td>语音</td><td><code>/v1/audio/*</code></td><td>OpenAI Audio</td><td>Whisper、TTS、火山语音、MiniMax</td><td>同步或音频</td></tr>
+            <tr><td>Embedding</td><td><code>POST /v1/embeddings</code></td><td>OpenAI Embeddings</td><td>OpenAI、Jina、Cohere、通义、Ollama</td><td>同步</td></tr>
+            <tr><td>Rerank</td><td><code>POST /v1/rerank</code></td><td>Rerank</td><td>Jina、Cohere、通义、硅基流动</td><td>同步</td></tr>
+            <tr><td>Realtime</td><td><code>GET /v1/realtime</code></td><td>OpenAI Realtime</td><td>Realtime 兼容模型</td><td>WebSocket</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="protocols">
+        <h2>协议参数</h2>
+        <h3>OpenAI Chat Completions</h3>
+        <p>适合大多数文本对话、多模态图片理解、工具调用、JSON 输出和流式输出。</p>
+        <div class="pill-row">
+          <span class="pill">必填：model</span><span class="pill">必填：messages</span><span class="pill">stream</span><span class="pill">temperature</span><span class="pill">top_p</span><span class="pill">max_tokens</span><span class="pill">tools</span><span class="pill">response_format</span><span class="pill">reasoning_effort</span>
+        </div>
+
+        <h3>OpenAI Responses</h3>
+        <p>适合 Responses 协议模型、Codex 类模型、新版工具和多模态工作流。必填 <code>model</code> 与 <code>input</code>，常用 <code>instructions</code>、<code>tools</code>、<code>reasoning</code>、<code>stream</code>。</p>
+
+        <h3>Claude Messages</h3>
+        <p>适合 Anthropic SDK 或 Claude 原生语义。必填 <code>model</code>、<code>messages</code>；常用 <code>max_tokens</code>、<code>system</code>、<code>stream</code>、<code>temperature</code>、<code>tools</code>、<code>thinking</code>。</p>
+        <div class="callout warning">高级字段如 <code>context_management</code>、<code>speed</code>、<code>service_tier</code>、<code>inference_geo</code> 默认可能被过滤，只有管理员允许后才会透传。</div>
+
+        <h3>Gemini Native</h3>
+        <p>适合 Google Gemini 原生 SDK。使用 <code>contents</code> / <code>parts</code> 结构，支持 <code>systemInstruction</code>、<code>generationConfig</code>、<code>safetySettings</code>、<code>tools</code>、<code>toolConfig</code>。</p>
+
+        <h3>Image</h3>
+        <p>必填 <code>model</code> 和 <code>prompt</code>。常用 <code>n</code>、<code>size</code>、<code>quality</code>、<code>response_format</code>、<code>image</code>、<code>images</code>、<code>mask</code>、<code>watermark</code>。</p>
+
+        <h3>Video Task</h3>
+        <p>视频生成是异步任务。提交后拿到 <code>task_id</code>，再查询任务状态，完成后取 <code>/v1/videos/{task_id}/content</code> 或响应中的 URL。</p>
+        <table>
+          <thead><tr><th>参数</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td><code>prompt</code></td><td>提示词</td></tr>
+            <tr><td><code>image</code> / <code>image_tail</code></td><td>图生视频首图 / 尾帧图，按模型支持情况使用</td></tr>
+            <tr><td><code>reference_urls</code></td><td>阿里 <code>wan2.6-r2v*</code> 推荐参考素材字段</td></tr>
+            <tr><td><code>media</code></td><td>新版参考素材数组，可含 <code>type</code>、<code>url</code>、<code>reference_voice</code></td></tr>
+            <tr><td><code>duration</code> / <code>seconds</code></td><td>时长，单位秒</td></tr>
+            <tr><td><code>size</code> / <code>resolution</code></td><td>尺寸或分辨率，如 <code>1280*720</code>、<code>720P</code></td></tr>
+            <tr><td><code>audio</code> / <code>watermark</code></td><td>是否生成音频、是否加水印，取决于模型支持</td></tr>
+            <tr><td><code>metadata</code></td><td>厂商特有参数透传</td></tr>
+          </tbody>
+        </table>
+
+        <h3>Embedding 与 Rerank</h3>
+        <p>Embedding 使用 <code>model</code> + <code>input</code>；Rerank 使用 <code>model</code> + <code>query</code> + <code>documents</code>。Rerank 可选 <code>top_n</code>、<code>return_documents</code>。</p>
+      </section>
+
+      <section id="models">
+        <h2>主流模型族接入</h2>
+        <p>Fy-api 文档应先按协议分层，再说明厂商差异。这样客户迁移 SDK 时路径清楚，运营接新渠道时也不会把厂商原生参数误写成统一接口必填项。</p>
+        <table>
+          <thead><tr><th>客户场景</th><th>优先协议</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td>OpenAI SDK / 大多数通用接入</td><td>OpenAI Chat / Responses / Image / Audio / Embedding</td><td>最统一，迁移成本最低。</td></tr>
+            <tr><td>Anthropic SDK / Claude 原生功能</td><td>Claude Messages</td><td>保留 Claude 原生消息、工具和 thinking 语义。</td></tr>
+            <tr><td>Gemini 原生 SDK / Veo</td><td>Gemini Native</td><td>适合 <code>contents</code> / <code>parts</code> 结构。</td></tr>
+            <tr><td>视频生成</td><td>Video Task</td><td>统一提交任务，再轮询查询。</td></tr>
+            <tr><td>检索重排</td><td>Rerank</td><td>面向检索排序场景。</td></tr>
+          </tbody>
+        </table>
+        <table>
+          <thead><tr><th>模型/厂商</th><th>推荐协议</th><th>后台渠道类型</th><th>用途</th><th>备注</th></tr></thead>
+          <tbody>
+            <tr><td>OpenAI GPT / GPT Image / Realtime</td><td>Chat、Responses、Image、Audio、Realtime、Video(Sora)</td><td>OpenAI / Sora</td><td>文本、多模态、图片、语音、视频</td><td>OpenAI SDK 兼容度最高</td></tr>
+            <tr><td>Azure OpenAI</td><td>Chat、Responses、Image、Audio</td><td>Azure</td><td>企业 Azure 部署</td><td>需要 endpoint 与 api-version</td></tr>
+            <tr><td>Claude</td><td>Claude Messages 或 Chat 兼容</td><td>Anthropic / AWS / VertexAI</td><td>长文本、代码、工具调用</td><td>Anthropic SDK 建议走 <code>/v1/messages</code></td></tr>
+            <tr><td>Gemini / Vertex</td><td>Gemini Native 或 Chat 兼容</td><td>Gemini / VertexAI</td><td>多模态、长上下文、Veo</td><td>原生 SDK 走 <code>/v1beta/models/*</code></td></tr>
+            <tr><td>DeepSeek</td><td>Chat</td><td>DeepSeek / OpenAI 兼容</td><td>推理、代码、中文</td><td>按模型支持推理字段</td></tr>
+            <tr><td>Qwen / 通义 / Wanx</td><td>Chat、Image、Video、Rerank、Embedding</td><td>Ali</td><td>中文、多模态、图片视频</td><td>复杂参数放 <code>metadata</code></td></tr>
+            <tr><td>Doubao / 火山 / Seedance</td><td>Chat、Image、Audio、Video</td><td>VolcEngine / DoubaoVideo</td><td>中文、语音、视频</td><td>视频是异步任务</td></tr>
+            <tr><td>Moonshot / Kimi</td><td>Chat、Claude 兼容、Embedding、Rerank</td><td>Moonshot</td><td>长文本、中文</td><td>取决于渠道能力</td></tr>
+            <tr><td>Cohere / Jina</td><td>Rerank、Embedding</td><td>Cohere / Jina</td><td>检索增强</td><td>Rerank 走 <code>/v1/rerank</code></td></tr>
+            <tr><td>Kling / Vidu / Sora / Veo</td><td>Video Task</td><td>Kling / Vidu / Sora / VertexAI/Gemini</td><td>视频生成</td><td>统一用 <code>/v1/videos</code></td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="examples">
+        <h2>调用示例</h2>
+        <h3>流式 Chat</h3>
+        <pre><code>curl -N -X POST https://api.example.com/v1/chat/completions \
+  -H "Authorization: Bearer sk-你的令牌" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "deepseek-chat",
+    "messages": [{"role": "user", "content": "写一个 Go HTTP server 示例"}],
+    "stream": true,
+    "stream_options": {"include_usage": true}
+  }'</code></pre>
+
+        <h3>Claude Messages</h3>
+        <pre><code>curl -X POST https://api.example.com/v1/messages \
+  -H "Authorization: Bearer sk-你的令牌" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "claude-sonnet-4-5",
+    "max_tokens": 1024,
+    "system": "你是代码审查助手。",
+    "messages": [{"role": "user", "content": "请审查这个函数是否有并发问题。"}]
+  }'</code></pre>
+
+        <h3>Gemini Native</h3>
+        <pre><code>curl -X POST "https://api.example.com/v1beta/models/gemini-2.5-pro:generateContent" \
+  -H "Authorization: Bearer sk-你的令牌" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "contents": [{
+      "role": "user",
+      "parts": [{"text": "解释一下 RAG 的基本流程"}]
+    }],
+    "generationConfig": {"temperature": 0.4, "maxOutputTokens": 1024}
+  }'</code></pre>
+
+        <h3>图片生成</h3>
+        <pre><code>curl -X POST https://api.example.com/v1/images/generations \
+  -H "Authorization: Bearer sk-你的令牌" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-image-1",
+    "prompt": "一张专业的 API 网关架构图，深色背景",
+    "size": "1024x1024",
+    "quality": "high",
+    "n": 1
+  }'</code></pre>
+
+        <h3>视频生成与查询</h3>
+        <pre><code>curl -X POST https://api.example.com/v1/videos \
+  -H "Authorization: Bearer sk-你的令牌" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "wan2.6-r2v-flash",
+    "prompt": "人物在咖啡馆窗边弹吉他，镜头缓慢推进，电影感",
+    "reference_urls": ["https://example.com/character.png"],
+    "size": "1280*720",
+    "duration": 5,
+    "audio": true,
+    "watermark": false
+  }'
+
+curl https://api.example.com/v1/videos/task_xxx \
+  -H "Authorization: Bearer sk-你的令牌"</code></pre>
+      </section>
+
+      <section id="admin">
+        <h2>管理员接入流程</h2>
+        <ol>
+          <li>准备厂商账号、API Key、Base URL、模型名、模型能力、价格规则。</li>
+          <li>进入管理员后台 -> 渠道管理 -> 添加渠道。</li>
+          <li>选择渠道类型，填写名称、分组、密钥、Base URL、模型列表、测试模型。</li>
+          <li>配置模型权限、模型价格、分组倍率和令牌权限。</li>
+          <li>用低成本模型先跑健康检查，再验证正式模型。</li>
+          <li>检查用量日志是否有 usage、费用、request_id 和错误信息。</li>
+        </ol>
+        <div class="callout">
+          视频模型建议单独建 <code>video-only</code> 分组，价格按秒、分辨率或任务档位配置。上线前必须验证提交、查询、完成、下载和失败退款。
+        </div>
+      </section>
+
+      <section id="troubleshooting">
+        <h2>排障</h2>
+        <table>
+          <thead><tr><th>问题</th><th>可能原因</th><th>处理</th></tr></thead>
+          <tbody>
+            <tr><td>401 Unauthorized</td><td>Token 错误或过期</td><td>重新创建令牌</td></tr>
+            <tr><td>403 Forbidden</td><td>模型无权限、分组无权限、IP 白名单不匹配</td><td>检查令牌权限和用户分组</td></tr>
+            <tr><td>400 model is required</td><td>请求体缺少 <code>model</code></td><td>补模型名</td></tr>
+            <tr><td>400 field messages is required</td><td>Chat 请求缺少 <code>messages</code></td><td>使用 Chat schema</td></tr>
+            <tr><td>400 contents is required</td><td>Gemini 原生请求缺少 <code>contents</code></td><td>使用 Gemini schema</td></tr>
+            <tr><td>429 Too Many Requests</td><td>限流或余额不足保护</td><td>降低频率、检查额度</td></tr>
+            <tr><td>视频一直 in_progress</td><td>上游生成慢或轮询延迟</td><td>按 5s、10s、20s、30s 退避轮询</td></tr>
+            <tr><td>流式没有 usage</td><td>渠道不支持 <code>stream_options.include_usage</code></td><td>以平台用量日志为准</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="limits">
+        <h2>限制与建议</h2>
+        <ul>
+          <li><code>/v1/files</code>、fine-tunes、图片 variations 等部分 OpenAI 端点当前未实现。</li>
+          <li>同名参数是否生效取决于模型和上游渠道，网关负责接收和尽力转换。</li>
+          <li>高级字段可能被管理员配置过滤，防止不兼容或额外计费。</li>
+          <li>视频、Midjourney、Suno 等任务类接口必须按任务查询。</li>
+          <li>价格展示和实际扣费以后台价格、模型倍率、分组倍率和任务实际用量为准。</li>
+        </ul>
+      </section>
+
+      <div class="footer">
+        本页面是静态 HTML 交付版，可直接浏览器打开，也可迁移进 <code>web/classic/public/product-docs</code> 或改造成 React 文档页。
+      </div>
+    </main>
+  </div>
+</body>
+</html>
