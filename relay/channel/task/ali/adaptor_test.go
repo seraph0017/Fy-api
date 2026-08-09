@@ -13,6 +13,24 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func TestAliVideoResponseAcceptsNumericErrorCode(t *testing.T) {
+	t.Parallel()
+
+	var resp AliVideoResponse
+	body := []byte(`{"code":400,"message":"bad request","request_id":"req-1","output":{"task_id":"task-1","task_status":"FAILED","code":123,"message":"output error"}}`)
+
+	if err := common.Unmarshal(body, &resp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	if got, want := string(resp.Code), "400"; got != want {
+		t.Fatalf("code = %q, want %q", got, want)
+	}
+	if got, want := string(resp.Output.Code), "123"; got != want {
+		t.Fatalf("output.code = %q, want %q", got, want)
+	}
+}
+
 func makeMappedInfo(upstreamModel string) *relaycommon.RelayInfo {
 	return &relaycommon.RelayInfo{
 		ChannelMeta: &relaycommon.ChannelMeta{

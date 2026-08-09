@@ -46,11 +46,12 @@ func RerankHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayI
 	}
 
 	if aliResponse.Code != "" {
+		code := string(aliResponse.Code)
 		return types.WithOpenAIError(types.OpenAIError{
 			Message: aliResponse.Message,
-			Type:    aliResponse.Code,
+			Type:    code,
 			Param:   aliResponse.RequestId,
-			Code:    aliResponse.Code,
+			Code:    code,
 		}, resp.StatusCode), nil
 	}
 
